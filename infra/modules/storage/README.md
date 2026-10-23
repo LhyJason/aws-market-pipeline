@@ -1,6 +1,7 @@
 # storage module
 
-Kinesis Data Stream -> Kinesis Data Firehose -> S3 lake bucket (`raw/`).
+Kinesis Data Stream -> Kinesis Data Firehose -> S3 lake bucket (`raw/`), plus
+the market DynamoDB table the processor writes.
 
 | Resource                         | Notes                                                                 |
 | -------------------------------- | --------------------------------------------------------------------- |
@@ -10,12 +11,14 @@ Kinesis Data Stream -> Kinesis Data Firehose -> S3 lake bucket (`raw/`).
 | `aws_kinesis_firehose_delivery_stream` | reads `source_stream_arn`, writes uncompressed JSON lines        |
 | `aws_iam_role` + inline policy   | read on the one stream, write on `raw/*` and `errors/*` only, logs to its own stream |
 | `aws_cloudwatch_log_group`       | delivery errors, explicit retention                                   |
+| `aws_dynamodb_table`             | `<prefix>-market`, on-demand, PK `symbol`, SK `sk`, TTL on `expires_at`; PITR and deletion protection off by default |
 
 ## Layout
 
 ```
 s3://<prefix>-lake-<account id>/
 ├── raw/dt=YYYY-MM-DD/hour=HH/<firehose object>     # one tick per line
+├── processed/bars_1m/symbol=S/dt=YYYY-MM-DD/hour=HH/bars.parquet   # written by the processor
 └── errors/<error type>/dt=YYYY-MM-DD/              # records Firehose could not deliver
 ```
 
@@ -33,8 +36,16 @@ is reached, whichever is first. At three ticks a minute the interval always
 wins: about 288 small objects a day. Raise the interval to 900 to cut S3 PUTs
 further at the cost of freshness in `raw/`.
 
-## Phase 3
+`processed/` has no lifecycle rule: it is the long-term history. The
+processor rewrites each hour file whole (see `services/processor/README.md`).
 
-Still to add here: `processed/` Parquet prefix (`symbol=/dt=/hour=`), the
-DynamoDB table `<prefix>-market` (on-demand, PK `symbol`, SK `kind#ts`, TTL on
-bars older than 7 days), and the Glue database and tables.
+## Market table
+
+| `sk`                      | Item                                              |
+| ------------------------- | ------------------------------------------------- |
+| `LATEST`                  | newest price per symbol                           |
+| `BAR#<13-digit epoch ms>` | one 1-minute bar; `expires_at` deletes it after 7 days |
+
+At three symbols the table holds about 30k items and costs well under a
+dollar a month on demand. Point-in-time recovery is off: everything in the
+table can be rebuilt by replaying the stream or `raw/`.

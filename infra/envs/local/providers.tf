@@ -28,6 +28,7 @@ provider "aws" {
 
   endpoints {
     cloudwatch = var.localstack_endpoint
+    dynamodb   = var.localstack_endpoint
     events     = var.localstack_endpoint
     firehose   = var.localstack_endpoint
     iam        = var.localstack_endpoint
@@ -35,6 +36,7 @@ provider "aws" {
     lambda     = var.localstack_endpoint
     logs       = var.localstack_endpoint
     s3         = var.localstack_endpoint
+    sqs        = var.localstack_endpoint
     sts        = var.localstack_endpoint
   }
 

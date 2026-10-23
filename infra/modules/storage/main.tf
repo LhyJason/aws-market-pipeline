@@ -227,3 +227,39 @@ resource "aws_kinesis_firehose_delivery_stream" "raw" {
   # attached first.
   depends_on = [aws_iam_role_policy.firehose]
 }
+
+# ---- Market table: latest prices and 1-minute bars -------------------------
+
+# Single table, PK symbol, SK sk ("LATEST" or "BAR#<13-digit epoch ms>"); see
+# services/processor/README.md. Bars carry expires_at and are deleted by TTL,
+# so the table stays a few thousand items; processed/ keeps the history.
+# Encrypted at rest with the AWS-owned key (the default, no KMS charge).
+resource "aws_dynamodb_table" "market" {
+  name         = "${var.name_prefix}-market"
+  billing_mode = "PAY_PER_REQUEST"
+  hash_key     = "symbol"
+  range_key    = "sk"
+
+  attribute {
+    name = "symbol"
+    type = "S"
+  }
+
+  attribute {
+    name = "sk"
+    type = "S"
+  }
+
+  ttl {
+    attribute_name = "expires_at"
+    enabled        = true
+  }
+
+  point_in_time_recovery {
+    enabled = var.table_point_in_time_recovery
+  }
+
+  deletion_protection_enabled = var.table_deletion_protection
+
+  tags = var.tags
+}

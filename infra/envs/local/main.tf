@@ -23,3 +23,18 @@ module "storage" {
   buffering_interval_s = 60
   force_destroy        = true
 }
+
+module "processing" {
+  source = "../../modules/processing"
+
+  name_prefix = local.name_prefix
+  # Build first: python scripts/build_lambda.py processor --arch x86_64
+  package_dir     = "${path.root}/../../../.build/processor-${var.processor_architecture}"
+  architecture    = var.processor_architecture
+  stream_arn      = module.ingest.stream_arn
+  table_name      = module.storage.table_name
+  table_arn       = module.storage.table_arn
+  lake_bucket     = module.storage.bucket_name
+  lake_bucket_arn = module.storage.bucket_arn
+  create_alarms   = false
+}

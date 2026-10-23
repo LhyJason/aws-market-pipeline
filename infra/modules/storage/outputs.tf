@@ -17,3 +17,11 @@ output "firehose_arn" {
 output "firehose_log_group_name" {
   value = aws_cloudwatch_log_group.firehose.name
 }
+
+output "table_name" {
+  value = aws_dynamodb_table.market.name
+}
+
+output "table_arn" {
+  value = aws_dynamodb_table.market.arn
+}

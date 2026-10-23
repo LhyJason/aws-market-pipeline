@@ -1,11 +1,11 @@
 # local environment (LocalStack, $0)
 
-The `ingest` and `storage` modules from dev, applied to
+The `ingest`, `storage` and `processing` modules from dev, applied to
 [LocalStack](https://docs.localstack.cloud) on `localhost:4566` instead of AWS.
 Nothing is billed and no AWS account is needed. The only outside traffic is
 the producer's call to the public price feed.
 
-Requires Docker Desktop (WSL2 backend on Windows) and Terraform.
+Requires Docker Desktop (WSL2 backend on Windows), Terraform and Python 3.12.
 
 ## Run
 
@@ -13,17 +13,26 @@ PowerShell, from this directory:
 
 ```powershell
 docker compose up -d                 # LocalStack 4.14.0
+python ../../../scripts/build_lambda.py processor --arch x86_64   # DuckDB wheels for the processor
 terraform init
-terraform apply                      # 18 resources, local state
+terraform apply                      # 25 resources, local state
 
 # the AWS CLI with LocalStack's dummy credentials
 $env:AWS_ACCESS_KEY_ID = 'test'; $env:AWS_SECRET_ACCESS_KEY = 'test'; $env:AWS_DEFAULT_REGION = 'us-east-1'
 aws --endpoint-url=http://localhost:4566 logs tail /aws/lambda/market-pipeline-local-producer --follow
 aws --endpoint-url=http://localhost:4566 s3 ls s3://market-pipeline-local-lake-000000000000/raw/ --recursive
+
+# processor output: bars and latest prices in DynamoDB, Parquet hour files in processed/
+aws --endpoint-url=http://localhost:4566 dynamodb query --table-name market-pipeline-local-market `
+  --key-condition-expression "symbol = :s" --expression-attribute-values '{\":s\":{\"S\":\"BTCUSDT\"}}' `
+  --no-scan-index-forward --max-items 3
+aws --endpoint-url=http://localhost:4566 s3 ls s3://market-pipeline-local-lake-000000000000/processed/ --recursive
 ```
 
-The schedule invokes the producer every minute, and objects appear under
-`raw/` within about a minute.
+The schedule invokes the producer every minute. Objects appear under `raw/`
+within about a minute; the processor writes a bar and rewrites the hour's
+Parquet file a few seconds after each tick. On the first apply it also reads
+the stream's backlog (`TRIM_HORIZON`, up to 24 hours).
 
 ## Stop
 
@@ -50,4 +59,13 @@ before the next `apply`.
 - **Account ID is `000000000000`,** so the bucket is
   `market-pipeline-local-lake-000000000000`.
 - **Lambda runs on the host's architecture** (`LAMBDA_IGNORE_ARCHITECTURE=1`)
-  rather than arm64.
+  rather than arm64. The producer is pure Python so it does not care; the
+  processor bundles DuckDB, a native wheel, so it is built for x86_64 here
+  (`processor_architecture`; set `arm64` on Apple silicon).
+- **No CloudWatch alarms.** LocalStack 4.14 creates them but fails to describe
+  them back to the AWS provider, so `terraform apply` hangs; `create_alarms` is
+  false here.
+- **DynamoDB TTL is not enforced.** Bars get `expires_at` but LocalStack does
+  not delete expired items unless configured to.
+- **Glue and Athena are not in the free edition.** The analytics module is
+  left out of this environment.
