@@ -43,7 +43,7 @@ cost model: [docs/cost.md](docs/cost.md).
 ├── infra/
 │   ├── bootstrap/        # one-time: Terraform state bucket + cost budget
 │   ├── modules/          # reusable Terraform modules (ingest, storage, processing, api, observability)
-│   └── envs/{dev,prod}/  # per-environment root modules
+│   └── envs/{local,dev,prod}/  # per-environment root modules (local = LocalStack)
 ├── services/
 │   ├── producer/         # Lambda: price feed -> Kinesis
 │   ├── processor/        # Lambda: Kinesis -> DynamoDB + S3   (phase 3)
@@ -56,6 +56,18 @@ cost model: [docs/cost.md](docs/cost.md).
 │   └── integration/      # against a deployed dev stack        (phase 4)
 ├── docs/                 # architecture, ADRs, cost
 └── .github/workflows/    # ci.yml (lint, test, validate), deploy.yml (OIDC + terraform apply)
+```
+
+## Run it locally for free
+
+`infra/envs/local` applies the same modules to [LocalStack](https://docs.localstack.cloud)
+in Docker: producer, Kinesis, Firehose and the S3 lake all run on your machine,
+no AWS account, $0. See [infra/envs/local/README.md](infra/envs/local/README.md).
+
+```bash
+cd infra/envs/local
+docker compose up -d
+terraform init && terraform apply
 ```
 
 ## Quickstart

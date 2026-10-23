@@ -60,3 +60,9 @@ jobs:
         run: |
           terraform init -backend=false -input=false
           terraform validate
+
+      - name: validate local
+        working-directory: infra/envs/local
+        run: |
+          terraform init -input=false
+          terraform validate

@@ -1,4 +1,4 @@
-.PHONY: install lint fmt test tf-fmt tf-validate bootstrap plan apply destroy clean
+.PHONY: install lint fmt test tf-fmt tf-validate bootstrap plan apply destroy local-up local-down clean
 
 PY  ?= python
 ENV ?= dev
@@ -29,6 +29,7 @@ tf-fmt:           ## check HCL formatting
 tf-validate:      ## validate every root module without touching a backend
 	cd infra/bootstrap && terraform init -backend=false -input=false >/dev/null && terraform validate
 	cd $(TF_DIR) && terraform init -backend=false -input=false >/dev/null && terraform validate
+	cd infra/envs/local && terraform init -input=false >/dev/null && terraform validate
 
 bootstrap:        ## one-time: state bucket + budget (local state)
 	cd infra/bootstrap && terraform init -input=false && terraform apply
@@ -41,6 +42,14 @@ apply:            ## terraform apply for ENV (default dev)
 
 destroy:          ## tear down ENV (default dev)
 	cd $(TF_DIR) && terraform destroy
+
+## ---- LocalStack ($0) ---------------------------------------------------
+
+local-up:         ## start LocalStack and apply infra/envs/local
+	cd infra/envs/local && docker compose up -d && terraform init -input=false && terraform apply
+
+local-down:       ## stop LocalStack and drop the local state it no longer matches
+	cd infra/envs/local && docker compose down && rm -f terraform.tfstate terraform.tfstate.backup
 
 clean:
 	find . -name __pycache__ -type d -prune -exec rm -rf {} +
