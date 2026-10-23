@@ -1,0 +1,14 @@
+# LocalStack for the local environment. 4.14.0 is the last release that starts
+# without a LocalStack account token; newer images require one.
+services:
+  localstack:
+    image: localstack/localstack:4.14.0
+    container_name: market-pipeline-localstack
+    ports:
+      - "127.0.0.1:4566:4566"
+    environment:
+      # The producer is built for arm64; run it on the host's architecture.
+      - LAMBDA_IGNORE_ARCHITECTURE=1
+    volumes:
+      # LocalStack runs each Lambda in its own container.
+      - /var/run/docker.sock:/var/run/docker.sock

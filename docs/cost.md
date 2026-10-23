@@ -22,6 +22,9 @@ Explorer at phase 6.
 
 ## Keeping it cheap
 
+- To pay nothing, run `infra/envs/local` on LocalStack instead of AWS. It
+  applies the same modules in Docker with no AWS account (see
+  `infra/envs/local/README.md`).
 - The Kinesis shard is the only always-on charge. Set `ingest_enabled = false`
   in `terraform.tfvars` to pause the schedule, or `terraform destroy` the dev
   environment between work sessions. Bootstrap resources (state bucket,
