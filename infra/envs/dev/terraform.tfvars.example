@@ -3,3 +3,4 @@ feed_base_url       = "https://api.binance.com" # https://api.binance.us from th
 symbols             = ["BTCUSDT", "ETHUSDT", "SOLUSDT"]
 schedule_expression = "rate(1 minute)"
 ingest_enabled      = true
+lake_force_destroy  = false # true lets `terraform destroy` delete lake objects

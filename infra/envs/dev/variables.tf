@@ -35,3 +35,9 @@ variable "ingest_enabled" {
   type        = bool
   default     = true
 }
+
+variable "lake_force_destroy" {
+  description = "Let terraform destroy empty the lake bucket; leave false unless the raw data is disposable"
+  type        = bool
+  default     = false
+}

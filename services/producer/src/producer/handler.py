@@ -37,8 +37,13 @@ def publish(
     PutRecords is not atomic: individual records can fail (typically with
     ProvisionedThroughputExceededException) while the call as a whole succeeds.
     Failed records are collected and retried with linear backoff.
+
+    Each record ends in a newline: Firehose concatenates records as-is, so the
+    delimiter is what makes the objects under raw/ line-delimited JSON.
     """
-    pending = [{"Data": t.to_json().encode("utf-8"), "PartitionKey": t.symbol} for t in ticks]
+    pending = [
+        {"Data": (t.to_json() + "\n").encode("utf-8"), "PartitionKey": t.symbol} for t in ticks
+    ]
     sent = 0
 
     for attempt in range(1, max_attempts + 1):

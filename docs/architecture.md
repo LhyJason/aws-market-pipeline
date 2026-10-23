@@ -20,13 +20,18 @@ servers to patch.
 3. **Publish.** Each tick becomes one Kinesis record, partitioned by symbol so
    a symbol's records stay ordered within a shard. Failed records from a
    `PutRecords` batch are retried with backoff before the invocation gives up.
-4. **Consume** (phase 3). A Lambda event-source mapping reads the stream in
+4. **Land raw** (phase 2). Kinesis Data Firehose reads the same stream and
+   writes the records untouched to the lake bucket under
+   `raw/dt=YYYY-MM-DD/hour=HH/`, one JSON object per line, flushing every
+   five minutes. Objects expire after 30 days: raw is a replay buffer for
+   reprocessing, not the system of record.
+5. **Consume** (phase 3). A Lambda event-source mapping reads the stream in
    batches, computes 1-minute OHLCV bars and rolling statistics, writes the
    latest state to DynamoDB, and appends Parquet files to S3 partitioned by
    `symbol/date/hour`.
-5. **Query** (phase 3). A Glue table over the Parquet prefix lets Athena run
+6. **Query** (phase 3). A Glue table over the Parquet prefix lets Athena run
    SQL across the full history.
-6. **Serve** (phase 4). API Gateway (HTTP API) fronts a FastAPI app on Lambda
+7. **Serve** (phase 4). API Gateway (HTTP API) fronts a FastAPI app on Lambda
    that reads DynamoDB for latest price, recent bars, and anomaly flags.
 
 ## Record schema (v1)
@@ -35,7 +40,9 @@ servers to patch.
 {"symbol": "BTCUSDT", "price": 67321.5, "ts": 1729700000000, "source": "binance"}
 ```
 
-`ts` is the producer-side observation time in epoch milliseconds. A `v`
+Each Kinesis record is one such object followed by `
+`. `ts` is the
+producer-side observation time in epoch milliseconds. A `v`
 field will be added if the schema changes; consumers treat missing `v` as 1.
 
 ## Environments
@@ -47,9 +54,10 @@ phase 5.
 
 ## Security posture
 
-- One IAM role per Lambda, scoped to the exact stream, table, or bucket it
-  uses. No wildcard resources.
-- Kinesis and S3 encrypted at rest with AWS-managed KMS keys.
+- One IAM role per Lambda or Firehose stream, scoped to the exact stream,
+  table, or bucket prefix it uses. No wildcard resources.
+- Kinesis encrypted at rest with the AWS-managed KMS key, the lake bucket
+  with SSE-S3; the lake bucket denies non-TLS requests and blocks public access.
 - Terraform state bucket: versioned, encrypted, public access blocked.
 - Deploys from GitHub use OIDC federation to assume a role; no access keys are
   stored in GitHub (phase 5).

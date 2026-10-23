@@ -106,6 +106,18 @@ def test_run_publishes_requested_symbols(kinesis):
     assert {r["PartitionKey"] for r in records} == {"BTCUSDT", "ETHUSDT"}
 
 
+def test_records_are_newline_delimited_json(kinesis):
+    # Firehose concatenates records verbatim; one JSON object per line is what
+    # makes raw/ objects readable by Athena's JSON SerDe.
+    run(Settings(stream_name="ticks", symbols=("SYM0", "SYM1")), StaticFeed(make_ticks(2)), kinesis)
+
+    blob = b"".join(r["Data"] for r in read_stream(kinesis, "ticks")).decode("utf-8")
+
+    lines = blob.splitlines()
+    assert blob.endswith("\n")
+    assert [json.loads(line)["symbol"] for line in lines] == ["SYM0", "SYM1"]
+
+
 def test_run_reports_not_ok_when_records_never_land():
     settings = Settings(stream_name="ticks", symbols=("SYM0",))
 
