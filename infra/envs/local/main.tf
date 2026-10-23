@@ -29,14 +29,28 @@ module "processing" {
 
   name_prefix = local.name_prefix
   # Build first: python scripts/build_lambda.py processor --arch x86_64
-  package_dir     = "${path.root}/../../../.build/processor-${var.processor_architecture}"
-  architecture    = var.processor_architecture
+  package_dir     = "${path.root}/../../../.build/processor-${var.lambda_architecture}"
+  architecture    = var.lambda_architecture
   stream_arn      = module.ingest.stream_arn
   table_name      = module.storage.table_name
   table_arn       = module.storage.table_arn
   lake_bucket     = module.storage.bucket_name
   lake_bucket_arn = module.storage.bucket_arn
   create_alarms   = false
+}
+
+module "api" {
+  source = "../../modules/api"
+
+  name_prefix = local.name_prefix
+  # Build first: python scripts/build_lambda.py api --arch x86_64
+  package_dir  = "${path.root}/../../../.build/api-${var.lambda_architecture}"
+  architecture = var.lambda_architecture
+  table_name   = module.storage.table_name
+  table_arn    = module.storage.table_arn
+  symbols      = var.symbols
+  # The account-level logging role is an AWS concern; LocalStack needs none.
+  manage_account_logging_role = false
 }
 
 # No analytics module here: Glue and Athena are not in LocalStack's free

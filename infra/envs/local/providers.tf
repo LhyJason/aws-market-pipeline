@@ -3,8 +3,10 @@ terraform {
 
   required_providers {
     aws = {
-      source  = "hashicorp/aws"
-      version = ">= 5.70, < 7.0"
+      source = "hashicorp/aws"
+      # 6.58.0 waits for a new REST API to report status AVAILABLE, a field
+      # LocalStack 4.14 never returns, so apply would fail. envs/dev is not pinned.
+      version = ">= 5.70, < 6.58"
     }
     archive = {
       source  = "hashicorp/archive"
@@ -27,6 +29,7 @@ provider "aws" {
   skip_requesting_account_id  = true
 
   endpoints {
+    apigateway = var.localstack_endpoint
     cloudwatch = var.localstack_endpoint
     dynamodb   = var.localstack_endpoint
     events     = var.localstack_endpoint
