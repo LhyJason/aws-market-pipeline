@@ -5,7 +5,7 @@ Kinesis, stream processing into DynamoDB and an S3 data lake, SQL analytics with
 Athena, and a FastAPI endpoint on API Gateway. Everything is provisioned with
 Terraform and deployed through GitHub Actions using OIDC (no long-lived AWS keys).
 
-> Status: **Phase 1 (foundation)** in progress. See [Phases](#phases).
+> Status: **Phase 2 (ingest to lake)** done; phase 3 next. See [Phases](#phases).
 
 ## Architecture
 
@@ -14,6 +14,7 @@ flowchart LR
     EB[EventBridge<br/>rate(1 min)] --> P[Lambda<br/>producer]
     FEED[(Public price feed)] -.-> P
     P --> K[Kinesis Data Stream]
+    K --> FH[Kinesis Data Firehose] --> RAW[(S3 data lake<br/>raw/ JSON, 30 days)]
     K --> C[Lambda<br/>processor]
     C --> DDB[(DynamoDB<br/>latest + bars)]
     C --> S3[(S3 data lake<br/>Parquet, partitioned)]
@@ -26,7 +27,7 @@ flowchart LR
 | Layer         | Services                                   | Phase |
 | ------------- | ------------------------------------------ | ----- |
 | Ingest        | EventBridge, Lambda, Kinesis Data Streams  | 1-2   |
-| Storage       | S3 (raw + Parquet), DynamoDB               | 2-3   |
+| Storage       | Kinesis Data Firehose, S3 (raw + Parquet), DynamoDB | 2-3 |
 | Processing    | Lambda (Kinesis consumer)                  | 3     |
 | Analytics     | Glue Data Catalog, Athena                  | 3     |
 | API           | API Gateway (HTTP), Lambda + FastAPI       | 4     |
@@ -91,13 +92,19 @@ aws kinesis describe-stream-summary --stream-name market-pipeline-dev-ticks
 aws logs tail /aws/lambda/market-pipeline-dev-producer --follow
 ```
 
+Firehose flushes to the lake every five minutes:
+
+```bash
+aws s3 ls "s3://$(terraform output -raw lake_bucket)/raw/" --recursive
+```
+
 Tear down with `terraform destroy` in `infra/envs/dev` when not in use. The
 Kinesis shard is the only always-on cost (see [docs/cost.md](docs/cost.md)).
 
 ## Phases
 
 - [x] **1. Foundation**: repo skeleton, Terraform remote state, CI (lint, tests, `terraform validate`), budget alarm, producer Lambda to Kinesis
-- [ ] **2. Ingest to lake**: raw records landing in S3 via Kinesis Data Firehose
+- [x] **2. Ingest to lake**: raw records landing in S3 via Kinesis Data Firehose (`raw/dt=/hour=`, 30-day expiry)
 - [ ] **3. Processing and analytics**: consumer Lambda, DynamoDB, Parquet partitions, Glue, Athena queries
 - [ ] **4. API**: FastAPI on Lambda behind API Gateway, auth, integration tests
 - [ ] **5. Hardening**: OIDC deploys from GitHub, dashboards, alarms, X-Ray, chaos test
