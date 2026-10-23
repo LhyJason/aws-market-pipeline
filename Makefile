@@ -1,8 +1,11 @@
-.PHONY: install lint fmt test tf-fmt tf-validate bootstrap plan apply destroy local-up local-down clean
+.PHONY: install lint fmt test build tf-fmt tf-validate bootstrap plan apply destroy local-up local-down clean
 
 PY  ?= python
 ENV ?= dev
 TF_DIR := infra/envs/$(ENV)
+# arm64 for AWS; LocalStack runs Lambdas on the Docker host's architecture.
+ARCH ?= arm64
+LOCAL_ARCH ?= x86_64
 
 ## ---- Python ---------------------------------------------------------------
 
@@ -21,6 +24,9 @@ fmt:              ## auto-fix lint and format
 test:             ## unit tests with coverage (no AWS access needed)
 	pytest --cov=services --cov-report=term-missing
 
+build:            ## package the processor Lambda (DuckDB wheels for ARCH) into .build/
+	$(PY) scripts/build_lambda.py processor --arch $(ARCH)
+
 ## ---- Terraform ------------------------------------------------------------
 
 tf-fmt:           ## check HCL formatting
@@ -34,10 +40,10 @@ tf-validate:      ## validate every root module without touching a backend
 bootstrap:        ## one-time: state bucket + budget (local state)
 	cd infra/bootstrap && terraform init -input=false && terraform apply
 
-plan:             ## terraform plan for ENV (default dev)
+plan: build       ## terraform plan for ENV (default dev)
 	cd $(TF_DIR) && terraform init -backend-config=backend.hcl -input=false && terraform plan
 
-apply:            ## terraform apply for ENV (default dev)
+apply: build      ## terraform apply for ENV (default dev)
 	cd $(TF_DIR) && terraform init -backend-config=backend.hcl -input=false && terraform apply
 
 destroy:          ## tear down ENV (default dev)
@@ -46,6 +52,7 @@ destroy:          ## tear down ENV (default dev)
 ## ---- LocalStack ($0) ---------------------------------------------------
 
 local-up:         ## start LocalStack and apply infra/envs/local
+	$(PY) scripts/build_lambda.py processor --arch $(LOCAL_ARCH)
 	cd infra/envs/local && docker compose up -d && terraform init -input=false && terraform apply
 
 local-down:       ## stop LocalStack and drop the local state it no longer matches

@@ -25,3 +25,9 @@ variable "feed_base_url" {
   type        = string
   default     = "https://api.binance.us"
 }
+
+variable "processor_architecture" {
+  description = "LocalStack runs Lambdas on the Docker host's architecture; use arm64 on Apple silicon"
+  type        = string
+  default     = "x86_64"
+}

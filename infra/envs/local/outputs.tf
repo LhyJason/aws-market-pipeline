@@ -13,3 +13,15 @@ output "lake_bucket" {
 output "firehose_name" {
   value = module.storage.firehose_name
 }
+
+output "market_table" {
+  value = module.storage.table_name
+}
+
+output "processor_function_name" {
+  value = module.processing.function_name
+}
+
+output "processor_dlq_url" {
+  value = module.processing.dlq_url
+}

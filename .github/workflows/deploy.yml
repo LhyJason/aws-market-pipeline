@@ -33,6 +33,15 @@ jobs:
           role-to-assume: ${{ vars.AWS_DEPLOY_ROLE_ARN }}
           aws-region: ${{ vars.AWS_REGION }}
 
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+
+      # The processor bundles DuckDB; Terraform zips this directory.
+      - name: build processor package
+        working-directory: .
+        run: python scripts/build_lambda.py processor --arch arm64
+
       - uses: hashicorp/setup-terraform@v3
         with:
           terraform_wrapper: false

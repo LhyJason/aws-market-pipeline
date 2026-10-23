@@ -27,3 +27,19 @@ module "storage" {
   force_destroy        = var.lake_force_destroy
   log_retention_days   = 14
 }
+
+module "processing" {
+  source = "../../modules/processing"
+
+  name_prefix = local.name_prefix
+  # Build first: python scripts/build_lambda.py processor --arch arm64
+  package_dir        = "${path.root}/../../../.build/processor-arm64"
+  architecture       = "arm64"
+  stream_arn         = module.ingest.stream_arn
+  table_name         = module.storage.table_name
+  table_arn          = module.storage.table_arn
+  lake_bucket        = module.storage.bucket_name
+  lake_bucket_arn    = module.storage.bucket_arn
+  batching_window_s  = var.processor_batching_window_s
+  log_retention_days = 14
+}

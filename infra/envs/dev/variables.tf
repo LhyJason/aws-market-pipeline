@@ -41,3 +41,9 @@ variable "lake_force_destroy" {
   type        = bool
   default     = false
 }
+
+variable "processor_batching_window_s" {
+  description = "Seconds the processor waits to fill a batch; raising it cuts S3 PUTs and adds latency"
+  type        = number
+  default     = 0
+}

@@ -54,3 +54,15 @@ variable "tags" {
   type        = map(string)
   default     = {}
 }
+
+variable "table_point_in_time_recovery" {
+  description = "Continuous backups for the market table (billed per GB; the table is rebuildable from Kinesis and raw/)"
+  type        = bool
+  default     = false
+}
+
+variable "table_deletion_protection" {
+  description = "Block deleting the market table; off so dev can be destroyed between sessions"
+  type        = bool
+  default     = false
+}

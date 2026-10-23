@@ -21,3 +21,19 @@ output "firehose_name" {
 output "firehose_log_group" {
   value = module.storage.firehose_log_group_name
 }
+
+output "market_table" {
+  value = module.storage.table_name
+}
+
+output "processor_function_name" {
+  value = module.processing.function_name
+}
+
+output "processor_log_group" {
+  value = module.processing.log_group_name
+}
+
+output "processor_dlq_url" {
+  value = module.processing.dlq_url
+}
