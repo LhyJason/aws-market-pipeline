@@ -26,11 +26,19 @@ servers to patch.
    five minutes. Objects expire after 30 days: raw is a replay buffer for
    reprocessing, not the system of record.
 5. **Consume** (phase 3). A Lambda event-source mapping reads the stream in
-   batches, computes 1-minute OHLCV bars and rolling statistics, writes the
-   latest state to DynamoDB, and appends Parquet files to S3 partitioned by
-   `symbol/date/hour`.
-6. **Query** (phase 3). A Glue table over the Parquet prefix lets Athena run
-   SQL across the full history.
+   batches of up to 100 records and the processor builds 1-minute bars per
+   symbol (OHLC plus `tick_count`, since the feed has no volume). DynamoDB
+   holds the latest price and the last 7 days of bars and is the source of
+   truth for bars. For every symbol-hour a batch touches, the processor
+   rewrites one Parquet file at a fixed key,
+   `processed/bars_1m/symbol=/dt=/hour=/bars.parquet`, from that hour's bars
+   in DynamoDB, using DuckDB ([ADR 0004](adr/0004-duckdb-parquet-rebuilt-from-dynamodb.md)).
+   Rolling statistics and anomaly flags move to phase 4, where the API uses
+   them.
+6. **Query** (phase 3). A Glue table over `processed/bars_1m/` uses partition
+   projection, so Athena sees new hours without a crawler. Three saved queries
+   (daily VWAP, largest 1-minute moves, gaps in minutes) run in an Athena
+   workgroup with a 1 GiB per-query scan limit.
 7. **Serve** (phase 4). API Gateway (HTTP API) fronts a FastAPI app on Lambda
    that reads DynamoDB for latest price, recent bars, and anomaly flags.
 
@@ -45,12 +53,51 @@ Each Kinesis record is one such object followed by `
 producer-side observation time in epoch milliseconds. A `v`
 field will be added if the schema changes; consumers treat missing `v` as 1.
 
+## Market table (DynamoDB)
+
+On demand, PK `symbol`, SK `sk`:
+
+| `sk`                      | Item                                                       |
+| ------------------------- | ---------------------------------------------------------- |
+| `LATEST`                  | newest `price`, `ts`, `source`; only moves forward          |
+| `BAR#<13-digit epoch ms>` | one minute: `open`, `high`, `low`, `close`, `tick_count`, `tick_ts` (set), `version`, `expires_at` (TTL, 7 days) |
+
+The 13-digit sort key orders bars by time, so the phase 4 API reads recent
+bars with one `Query`.
+
+## Delivery guarantees
+
+Kinesis delivers at least once, and every processor write is idempotent:
+
+- Bar merges use max/min for high/low, the earliest and latest tick time for
+  open/close, and a set of tick timestamps for the count. Merging a tick twice
+  changes nothing, and an unchanged bar is not rewritten. Writes are
+  conditional on the version that was read.
+- `LATEST` is updated only by a newer tick.
+- Parquet hour files are rebuilt whole and overwrite the same key.
+
+The event-source mapping uses `ReportBatchItemFailures`. If a symbol fails,
+the handler returns the earliest sequence number that carried its ticks and
+Lambda retries from there. It also bisects batches on errors, retries 5 times,
+and gives up on records older than an hour. A batch that keeps failing goes
+to an SQS dead-letter queue as metadata (shard, sequence range); the records
+can be replayed from the stream (24 hours) or `raw/` (30 days). Malformed
+records are logged and dropped, since retrying cannot fix them.
+
 ## Environments
 
 `infra/envs/dev` and `infra/envs/prod` are separate root modules with separate
 state keys in the same state bucket. Resource names are prefixed
 `<project>-<env>` so both can live in one account. Prod is a placeholder until
 phase 5.
+
+`infra/envs/local` applies the ingest, storage and processing modules to
+LocalStack 4.14 in Docker for $0. Glue and Athena are not in LocalStack's free
+edition, so local leaves the analytics module out, and
+`scripts/query_lake.py` runs the same saved queries with DuckDB over the
+Parquet files instead. The processor bundles DuckDB, a native wheel, so
+`scripts/build_lambda.py` builds its package for the architecture it runs on:
+arm64 on AWS, the Docker host's (usually x86_64) on LocalStack.
 
 ## Security posture
 
@@ -67,6 +114,7 @@ phase 5.
 ## Observability (phase 5)
 
 Structured JSON logs from every Lambda (already in place for the producer),
-CloudWatch metrics and alarms on Lambda errors, iterator age on the consumer,
-and API 5xx rate, with SNS email notification. X-Ray tracing across the
+CloudWatch metrics and alarms on Lambda errors, iterator age on the consumer
+(the alarm exists since phase 3, without a notification target), and API 5xx
+rate, with SNS email notification. X-Ray tracing across the
 producer and API.

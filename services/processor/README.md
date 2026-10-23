@@ -66,7 +66,14 @@ reprocessed harmlessly.
 
 ## Packaging
 
-`requirements.txt` pins DuckDB, a native wheel (about 24 MB), bundled into the
+`requirements.txt` pins DuckDB, a native wheel (about 22 MB), bundled into the
 zip; boto3 comes with the runtime. The wheel must match the architecture the
-function runs on (arm64 on AWS, x86_64 on LocalStack). The Terraform build lands
-with `infra/modules/processing`.
+function runs on (arm64 on AWS, x86_64 on LocalStack), so the package is built
+before Terraform zips it:
+
+```bash
+python scripts/build_lambda.py processor --arch arm64    # .build/processor-arm64/
+```
+
+See `infra/modules/processing/README.md` and
+[ADR 0004](../../docs/adr/0004-duckdb-parquet-rebuilt-from-dynamodb.md).
