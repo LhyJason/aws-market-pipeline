@@ -1,0 +1,18 @@
+{
+  "comment": "Single source of truth for the bars_1m table. Terraform builds the Glue table from it; tests check it against the processor's Parquet files and the DDL.",
+  "columns": [
+    {"name": "bar_start", "type": "timestamp", "comment": "start of the minute, UTC"},
+    {"name": "open", "type": "double", "comment": "price of the first tick in the minute"},
+    {"name": "high", "type": "double", "comment": "highest tick price"},
+    {"name": "low", "type": "double", "comment": "lowest tick price"},
+    {"name": "close", "type": "double", "comment": "price of the last tick in the minute"},
+    {"name": "tick_count", "type": "int", "comment": "distinct ticks in the minute; the feed has no volume"},
+    {"name": "first_ts", "type": "bigint", "comment": "epoch ms of the first tick"},
+    {"name": "last_ts", "type": "bigint", "comment": "epoch ms of the last tick"}
+  ],
+  "partition_keys": [
+    {"name": "symbol", "type": "string", "comment": "e.g. BTCUSDT"},
+    {"name": "dt", "type": "date", "comment": "UTC date of bar_start"},
+    {"name": "hour", "type": "int", "comment": "UTC hour of bar_start, 0-23"}
+  ]
+}

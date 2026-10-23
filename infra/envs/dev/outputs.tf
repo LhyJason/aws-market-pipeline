@@ -37,3 +37,11 @@ output "processor_log_group" {
 output "processor_dlq_url" {
   value = module.processing.dlq_url
 }
+
+output "glue_database" {
+  value = module.analytics.database_name
+}
+
+output "athena_workgroup" {
+  value = module.analytics.workgroup
+}

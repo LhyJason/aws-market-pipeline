@@ -94,6 +94,20 @@ resource "aws_s3_bucket_lifecycle_configuration" "lake" {
     }
   }
 
+  # Athena writes every query's result set here (analytics module).
+  rule {
+    id     = "expire-athena-results"
+    status = "Enabled"
+
+    filter {
+      prefix = "athena-results/"
+    }
+
+    expiration {
+      days = var.athena_results_expiration_days
+    }
+  }
+
   rule {
     id     = "abort-incomplete-uploads"
     status = "Enabled"

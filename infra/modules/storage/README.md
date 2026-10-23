@@ -7,7 +7,7 @@ the market DynamoDB table the processor writes.
 | -------------------------------- | --------------------------------------------------------------------- |
 | `aws_s3_bucket`                  | `<prefix>-lake-<account id>` (names are global), SSE-S3, versioning off |
 | `aws_s3_bucket_public_access_block` + bucket policy | all public access blocked, non-TLS requests denied |
-| `aws_s3_bucket_lifecycle_configuration` | expires `raw/` and `errors/` after `raw_expiration_days` (30), aborts stale multipart uploads |
+| `aws_s3_bucket_lifecycle_configuration` | expires `raw/` and `errors/` after `raw_expiration_days` (30), `athena-results/` after `athena_results_expiration_days` (7), aborts stale multipart uploads |
 | `aws_kinesis_firehose_delivery_stream` | reads `source_stream_arn`, writes uncompressed JSON lines        |
 | `aws_iam_role` + inline policy   | read on the one stream, write on `raw/*` and `errors/*` only, logs to its own stream |
 | `aws_cloudwatch_log_group`       | delivery errors, explicit retention                                   |
@@ -19,6 +19,7 @@ the market DynamoDB table the processor writes.
 s3://<prefix>-lake-<account id>/
 ├── raw/dt=YYYY-MM-DD/hour=HH/<firehose object>     # one tick per line
 ├── processed/bars_1m/symbol=S/dt=YYYY-MM-DD/hour=HH/bars.parquet   # written by the processor
+├── athena-results/                                 # Athena query output (analytics module)
 └── errors/<error type>/dt=YYYY-MM-DD/              # records Firehose could not deliver
 ```
 

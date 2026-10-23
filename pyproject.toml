@@ -10,7 +10,7 @@ readme = "README.md"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-pythonpath = ["services/producer/src", "services/processor/src"]
+pythonpath = ["services/producer/src", "services/processor/src", "scripts"]
 addopts = "-ra -q --strict-markers"
 markers = [
   "integration: hits a deployed AWS environment (skipped in CI by default)",
@@ -19,14 +19,14 @@ markers = [
 [tool.ruff]
 line-length = 100
 target-version = "py312"
-src = ["services/producer/src", "services/processor/src", "tests"]
+src = ["services/producer/src", "services/processor/src", "scripts", "tests"]
 extend-exclude = [".venv", ".build"]
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "B", "UP", "SIM", "RUF"]
 
 [tool.ruff.lint.isort]
-known-first-party = ["producer", "processor"]
+known-first-party = ["producer", "processor", "query_lake", "build_lambda"]
 
 [tool.coverage.run]
 source = ["services"]

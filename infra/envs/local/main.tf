@@ -38,3 +38,7 @@ module "processing" {
   lake_bucket_arn = module.storage.bucket_arn
   create_alarms   = false
 }
+
+# No analytics module here: Glue and Athena are not in LocalStack's free
+# edition. Run the saved Athena queries against processed/ with DuckDB instead:
+#   python scripts/query_lake.py --localstack

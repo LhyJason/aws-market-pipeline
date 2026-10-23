@@ -43,3 +43,11 @@ module "processing" {
   batching_window_s  = var.processor_batching_window_s
   log_retention_days = 14
 }
+
+module "analytics" {
+  source = "../../modules/analytics"
+
+  name_prefix = local.name_prefix
+  lake_bucket = module.storage.bucket_name
+  symbols     = var.symbols
+}
