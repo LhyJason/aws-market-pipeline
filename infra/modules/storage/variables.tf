@@ -19,6 +19,12 @@ variable "raw_expiration_days" {
   }
 }
 
+variable "athena_results_expiration_days" {
+  description = "Days after which Athena query results under athena-results/ are deleted"
+  type        = number
+  default     = 7
+}
+
 variable "buffering_interval_s" {
   description = "Firehose flushes to S3 after this many seconds (60 to 900), whichever of size/interval comes first"
   type        = number

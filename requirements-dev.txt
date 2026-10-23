@@ -7,3 +7,5 @@ moto>=5.0
 pytest>=8.3
 pytest-cov>=5.0
 ruff>=0.6
+# Parses the saved Athena queries as Trino in tests.
+sqlglot==30.21.0
