@@ -1,0 +1,7 @@
+# Local development and CI tooling. Lambda runtimes ship boto3; it is listed
+# here only so tests and local scripts can import it.
+boto3>=1.35
+moto>=5.0
+pytest>=8.3
+pytest-cov>=5.0
+ruff>=0.6

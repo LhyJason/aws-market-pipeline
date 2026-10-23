@@ -1,0 +1,37 @@
+[project]
+name = "aws-market-pipeline"
+version = "0.1.0"
+description = "Serverless real-time market data pipeline on AWS"
+requires-python = ">=3.12"
+readme = "README.md"
+
+# Runtime dependencies live per service (services/*/requirements.txt) so each
+# Lambda package stays minimal. Dev tooling is in requirements-dev.txt.
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["services/producer/src"]
+addopts = "-ra -q --strict-markers"
+markers = [
+  "integration: hits a deployed AWS environment (skipped in CI by default)",
+]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+src = ["services/producer/src", "tests"]
+extend-exclude = [".venv", ".build"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "UP", "SIM", "RUF"]
+
+[tool.ruff.lint.isort]
+known-first-party = ["producer"]
+
+[tool.coverage.run]
+source = ["services"]
+omit = ["*/__init__.py"]
+
+[tool.coverage.report]
+show_missing = true
+skip_covered = false

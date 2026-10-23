@@ -1,0 +1,5 @@
+aws_region          = "us-east-1"
+feed_base_url       = "https://api.binance.com" # https://api.binance.us from the US
+symbols             = ["BTCUSDT", "ETHUSDT", "SOLUSDT"]
+schedule_expression = "rate(1 minute)"
+ingest_enabled      = true

@@ -1,0 +1,50 @@
+name: deploy
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  id-token: write # OIDC token for AssumeRoleWithWebIdentity; no stored AWS keys
+  contents: read
+
+concurrency:
+  group: deploy-dev
+  cancel-in-progress: false
+
+jobs:
+  dev:
+    name: terraform apply (dev)
+    # Stays skipped until phase 5 creates the GitHub OIDC role. Then set these
+    # repository (or "dev" environment) variables:
+    #   AWS_DEPLOY_ROLE_ARN, AWS_REGION, TF_STATE_BUCKET
+    if: vars.AWS_DEPLOY_ROLE_ARN != ''
+    runs-on: ubuntu-latest
+    environment: dev
+    defaults:
+      run:
+        working-directory: infra/envs/dev
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.AWS_DEPLOY_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_REGION }}
+
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_wrapper: false
+
+      - name: write backend config
+        env:
+          TF_STATE_BUCKET: ${{ vars.TF_STATE_BUCKET }}
+          AWS_REGION: ${{ vars.AWS_REGION }}
+        run: printf 'bucket = "%s"\nregion = "%s"\n' "$TF_STATE_BUCKET" "$AWS_REGION" > backend.hcl
+
+      - run: terraform init -backend-config=backend.hcl -input=false
+
+      - run: terraform plan -input=false -out=tfplan
+
+      - run: terraform apply -input=false tfplan

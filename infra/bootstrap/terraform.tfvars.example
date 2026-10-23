@@ -1,0 +1,4 @@
+state_bucket_name  = "CHANGE-ME-market-pipeline-tfstate"
+aws_region         = "us-east-1"
+budget_alert_email = "you@example.com"
+monthly_budget_usd = 15
