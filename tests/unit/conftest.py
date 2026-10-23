@@ -1,4 +1,4 @@
-"""Fixtures shared by the processor tests: a mocked market table and lake bucket."""
+"""Fixtures shared by the processor and API tests: a mocked market table and lake bucket."""
 
 import boto3
 import pytest

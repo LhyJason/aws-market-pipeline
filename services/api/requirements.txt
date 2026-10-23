@@ -1,0 +1,7 @@
+# Runtime dependencies bundled into the api zip. boto3 comes with the Lambda
+# runtime and is not listed. Keep the pins in step with requirements-dev.txt.
+# pydantic pulls in pydantic-core, a native wheel, so the package is built per
+# architecture with scripts/build_lambda.py.
+fastapi==0.162.0
+mangum==0.22.0
+pydantic==2.14.1

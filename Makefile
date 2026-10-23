@@ -24,8 +24,9 @@ fmt:              ## auto-fix lint and format
 test:             ## unit tests with coverage (no AWS access needed)
 	pytest --cov=services --cov-report=term-missing
 
-build:            ## package the processor Lambda (DuckDB wheels for ARCH) into .build/
+build:            ## package the Lambdas with native wheels (DuckDB, pydantic-core) for ARCH into .build/
 	$(PY) scripts/build_lambda.py processor --arch $(ARCH)
+	$(PY) scripts/build_lambda.py api --arch $(ARCH)
 
 ## ---- Terraform ------------------------------------------------------------
 
@@ -53,6 +54,7 @@ destroy:          ## tear down ENV (default dev)
 
 local-up:         ## start LocalStack and apply infra/envs/local
 	$(PY) scripts/build_lambda.py processor --arch $(LOCAL_ARCH)
+	$(PY) scripts/build_lambda.py api --arch $(LOCAL_ARCH)
 	cd infra/envs/local && docker compose up -d && terraform init -input=false && terraform apply
 
 local-down:       ## stop LocalStack and drop the local state it no longer matches
