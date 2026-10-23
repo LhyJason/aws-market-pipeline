@@ -11,14 +11,17 @@ Explorer at phase 6.
 | Kinesis PUT payload units         | ~130k records/month                 | < $0.01          |          |
 | Lambda (producer)                 | 43k invocations, ~200 ms, 256 MB    | free tier        |          |
 | Kinesis Data Firehose (phase 2)   | $0.029/GB, each record rounded up to 5 KB: ~0.65 GB billed | ~$0.02 |   |
-| Lambda (processor, phase 3)       | similar                             | free tier        |          |
-| DynamoDB (phase 3)                | on-demand, small                    | free tier        |          |
+| Lambda (processor, phase 3)       | 43k invocations, ~400 ms, 512 MB (~9k GB-s) | free tier |          |
+| DynamoDB (phase 3)                | on demand: ~260k writes, ~800k strongly consistent reads; ~30k items | ~$0.30 |  |
 | S3 raw/ (phase 2)                 | ~8.6k PUTs, ~10 MB held (30-day expiry) | < $0.05      |          |
-| S3 processed/ (phase 3)           | a few hundred MB                    | < $0.10          |          |
-| Athena (phase 3)                  | $5/TB scanned, tiny tables          | < $0.10          |          |
+| S3 processed/ (phase 3)           | ~130k PUTs (one per symbol-hour per batch), ~5 MB/month added | ~$0.65 |  |
+| SQS dead-letter queue (phase 3)   | empty unless the processor fails    | free tier        |          |
+| Glue Data Catalog (phase 3)       | 1 table, projected partitions (none stored) | free tier |          |
+| Athena (phase 3)                  | $5/TB scanned, 10 MB minimum per query, 1 GiB cutoff | < $0.10 |      |
+| CloudWatch alarm (phase 3)        | 1 metric alarm on iterator age      | $0.10            |          |
 | API Gateway HTTP API (phase 4)    | $1 per million requests             | < $0.10          |          |
 | CloudWatch logs                   | a few MB, 14-day retention          | < $0.50          |          |
-| **Total**                         |                                     | **~$12**         |          |
+| **Total**                         |                                     | **~$13**         |          |
 
 ## Keeping it cheap
 
@@ -37,6 +40,16 @@ Explorer at phase 6.
 - The lake bucket refuses `terraform destroy` while it holds objects. Set
   `lake_force_destroy = true` in `terraform.tfvars` if the raw data is
   disposable, or empty the bucket first.
+- Processed Parquet costs PUTs, not storage: each batch rewrites the hour
+  file for every symbol it touches. Set `processor_batching_window_s` (for
+  example 60) to batch several minutes per invocation, cutting PUTs and
+  DynamoDB reads at the cost of up to that many seconds of latency.
+- Athena bills at least 10 MB per query; every saved query filters on the
+  last 7 days so partition projection prunes the rest. The workgroup cancels
+  any query that would scan more than 1 GiB, and query results expire after
+  7 days. To query for free, run `scripts/query_lake.py` with DuckDB instead.
+- The DynamoDB table has no point-in-time recovery: bars can be rebuilt by
+  replaying `raw/`, and TTL keeps the table at about 30k items.
 - The bootstrap module creates an AWS Budget with an email alert at a
   configurable threshold (default $15). Set it on day one.
 - AWS changed its Free Tier in mid-2025: new accounts receive a credit

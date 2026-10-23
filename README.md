@@ -5,7 +5,7 @@ Kinesis, stream processing into DynamoDB and an S3 data lake, SQL analytics with
 Athena, and a FastAPI endpoint on API Gateway. Everything is provisioned with
 Terraform and deployed through GitHub Actions using OIDC (no long-lived AWS keys).
 
-> Status: **Phase 2 (ingest to lake)** done; phase 3 next. See [Phases](#phases).
+> Status: **Phase 3 (processing and analytics)** done; phase 4 next. See [Phases](#phases).
 
 ## Architecture
 
@@ -16,8 +16,9 @@ flowchart LR
     P --> K[Kinesis Data Stream]
     K --> FH[Kinesis Data Firehose] --> RAW[(S3 data lake<br/>raw/ JSON, 30 days)]
     K --> C[Lambda<br/>processor]
-    C --> DDB[(DynamoDB<br/>latest + bars)]
-    C --> S3[(S3 data lake<br/>Parquet, partitioned)]
+    C -. failed batches .-> DLQ[SQS DLQ]
+    C --> DDB[(DynamoDB<br/>latest + 1-min bars)]
+    C --> S3[(S3 data lake<br/>Parquet, symbol/dt/hour)]
     S3 --> GLUE[Glue Catalog] --> ATH[Athena]
     APIGW[API Gateway] --> API[Lambda<br/>FastAPI]
     API --> DDB
@@ -46,14 +47,15 @@ cost model: [docs/cost.md](docs/cost.md).
 │   └── envs/{local,dev,prod}/  # per-environment root modules (local = LocalStack)
 ├── services/
 │   ├── producer/         # Lambda: price feed -> Kinesis
-│   ├── processor/        # Lambda: Kinesis -> DynamoDB + S3   (phase 3)
+│   ├── processor/        # Lambda: Kinesis -> DynamoDB + S3 Parquet
 │   └── api/              # FastAPI on Lambda                   (phase 4)
 ├── analytics/
-│   ├── athena/           # table DDL and saved queries         (phase 3)
+│   ├── athena/           # table schema, DDL and saved queries
 │   └── notebooks/
 ├── tests/
 │   ├── unit/             # fast, no AWS (moto for AWS clients)
 │   └── integration/      # against a deployed dev stack        (phase 4)
+├── scripts/              # build_lambda.py (Lambda packages), query_lake.py (Athena SQL on DuckDB)
 ├── docs/                 # architecture, ADRs, cost
 └── .github/workflows/    # ci.yml (lint, test, validate), deploy.yml (OIDC + terraform apply)
 ```
@@ -61,13 +63,17 @@ cost model: [docs/cost.md](docs/cost.md).
 ## Run it locally for free
 
 `infra/envs/local` applies the same modules to [LocalStack](https://docs.localstack.cloud)
-in Docker: producer, Kinesis, Firehose and the S3 lake all run on your machine,
-no AWS account, $0. See [infra/envs/local/README.md](infra/envs/local/README.md).
+in Docker: producer, Kinesis, Firehose, the processor, DynamoDB and the S3 lake
+all run on your machine, no AWS account, $0. See
+[infra/envs/local/README.md](infra/envs/local/README.md).
 
 ```bash
+python scripts/build_lambda.py processor --arch x86_64   # processor package with DuckDB
 cd infra/envs/local
 docker compose up -d
 terraform init && terraform apply
+cd ../../..
+python scripts/query_lake.py --localstack                # the Athena queries, on DuckDB
 ```
 
 ## Quickstart
@@ -90,6 +96,7 @@ terraform init && terraform apply
 cd ../..
 
 # 4. Deploy the dev environment
+python scripts/build_lambda.py processor --arch arm64   # or: make build
 cd infra/envs/dev
 cp backend.hcl.example backend.hcl              # bucket name from step 3
 cp terraform.tfvars.example terraform.tfvars
@@ -104,11 +111,19 @@ aws kinesis describe-stream-summary --stream-name market-pipeline-dev-ticks
 aws logs tail /aws/lambda/market-pipeline-dev-producer --follow
 ```
 
-Firehose flushes to the lake every five minutes:
+Firehose flushes to the lake every five minutes, and the processor writes
+bars and Parquet within seconds of each tick:
 
 ```bash
 aws s3 ls "s3://$(terraform output -raw lake_bucket)/raw/" --recursive
+aws s3 ls "s3://$(terraform output -raw lake_bucket)/processed/" --recursive
+aws dynamodb query --table-name "$(terraform output -raw market_table)" \
+  --key-condition-expression "symbol = :s" \
+  --expression-attribute-values '{":s":{"S":"BTCUSDT"}}' --no-scan-index-forward --max-items 3
 ```
+
+The saved Athena queries are in the workgroup named by
+`terraform output -raw athena_workgroup`.
 
 Tear down with `terraform destroy` in `infra/envs/dev` when not in use. The
 Kinesis shard is the only always-on cost (see [docs/cost.md](docs/cost.md)).
@@ -117,7 +132,7 @@ Kinesis shard is the only always-on cost (see [docs/cost.md](docs/cost.md)).
 
 - [x] **1. Foundation**: repo skeleton, Terraform remote state, CI (lint, tests, `terraform validate`), budget alarm, producer Lambda to Kinesis
 - [x] **2. Ingest to lake**: raw records landing in S3 via Kinesis Data Firehose (`raw/dt=/hour=`, 30-day expiry)
-- [ ] **3. Processing and analytics**: consumer Lambda, DynamoDB, Parquet partitions, Glue, Athena queries
+- [x] **3. Processing and analytics**: processor Lambda (1-minute bars, idempotent, partial batch responses, SQS DLQ), DynamoDB, Parquet via DuckDB under `processed/`, Glue table with partition projection, Athena saved queries checked with DuckDB in CI
 - [ ] **4. API**: FastAPI on Lambda behind API Gateway, auth, integration tests
 - [ ] **5. Hardening**: OIDC deploys from GitHub, dashboards, alarms, X-Ray, chaos test
 - [ ] **6. Portfolio polish**: diagram, measured numbers (throughput, p95 latency, monthly cost), demo
