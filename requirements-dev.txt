@@ -1,6 +1,8 @@
 # Local development and CI tooling. Lambda runtimes ship boto3; it is listed
 # here only so tests and local scripts can import it.
 boto3>=1.35
+# Same pin as services/processor/requirements.txt: tests write real Parquet.
+duckdb==1.5.6
 moto>=5.0
 pytest>=8.3
 pytest-cov>=5.0

@@ -1,0 +1,3 @@
+# Runtime dependencies bundled into the processor zip. boto3 comes with the
+# Lambda runtime and is not listed. Keep the pin in step with requirements-dev.txt.
+duckdb==1.5.6
