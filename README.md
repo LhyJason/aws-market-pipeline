@@ -78,9 +78,11 @@ cd ../../..
 python scripts/query_lake.py --localstack                # the Athena queries, on DuckDB
 make test-integration                                    # producer -> ... -> API, end to end
 make test-chaos                                          # inject failures, check the stack copes
+make load RATE=50 DURATION=60                            # load test: throughput and lag percentiles
 ```
 
 `make local-up` does the builds, `docker compose up` and `apply` in one go.
+The load test and what its LocalStack numbers mean: [docs/load-test.md](docs/load-test.md).
 
 ## Quickstart
 
