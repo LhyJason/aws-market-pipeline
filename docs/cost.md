@@ -4,34 +4,41 @@ Estimates for the dev environment at one producer run per minute and three
 symbols, us-east-1, on-demand pricing. The phase 5 monitoring is billed at
 list price below, but CloudWatch's and X-Ray's always-free allowances cover it
 at this size. Re-check against the AWS pricing pages
-before quoting numbers on a resume; fill the "measured" column from Cost
-Explorer at phase 6.
+before quoting numbers on a resume.
+
+**Nothing in this table has been measured on AWS.** The project has not been
+applied to a real account ([ADR 0009](adr/0009-measure-on-localstack-only.md)),
+so the Measured column is empty (—) except where a LocalStack run says
+something about a cost driver, and those cells are marked *LocalStack*.
+LocalStack bills nothing, so it can only check usage, never price. A capped
+run on AWS (about $0.75, priced in ADR 0009) would fill the rest from Cost
+Explorer.
 
 | Component                         | Driver                              | Estimate / month | Measured |
 | --------------------------------- | ----------------------------------- | ---------------- | -------- |
-| Kinesis Data Streams, 1 shard     | $0.015/shard-hour, always on        | ~$11             |          |
-| Kinesis PUT payload units         | ~130k records/month                 | < $0.01          |          |
-| Lambda (producer)                 | 43k invocations, ~200 ms, 256 MB    | free tier        |          |
-| Kinesis Data Firehose (phase 2)   | $0.029/GB, each record rounded up to 5 KB: ~0.65 GB billed | ~$0.02 |   |
-| Lambda (processor, phase 3)       | 43k invocations, ~400 ms, 512 MB (~9k GB-s) | free tier |          |
-| DynamoDB (phase 3)                | on demand: ~260k writes, ~800k strongly consistent reads; ~30k items | ~$0.30 |  |
-| S3 raw/ (phase 2)                 | ~8.6k PUTs, ~10 MB held (30-day expiry) | < $0.05      |          |
-| S3 processed/ (phase 3)           | ~130k PUTs (one per symbol-hour per batch), ~5 MB/month added | ~$0.65 |  |
-| SQS dead-letter queue (phase 3)   | empty unless the processor fails    | free tier        |          |
-| Glue Data Catalog (phase 3)       | 1 table, projected partitions (none stored) | free tier |          |
-| Athena (phase 3)                  | $5/TB scanned, 10 MB minimum per query, 1 GiB cutoff | < $0.10 |      |
-| API Gateway REST API (phase 4)    | $3.50 per million requests; the 10k/day quota caps it at ~300k/month | < $0.10 (cap ~$1.05) | |
-| Lambda (API, phase 4)             | 512 MB, a few ms per request (~50 ms for the largest `/bars`) | free tier |  |
-| DynamoDB reads (API, phase 4)     | one `GetItem` or two `Query` calls per request, eventually consistent | < $0.05 | |
-| CloudWatch logs                   | a few MB, 14-day retention          | < $0.50          |          |
-| CloudWatch alarms (phase 5)       | 5 standard alarms at $0.10 (producer errors, iterator age, DLQ depth, API 5xx, API p95 latency) | $0.50 (free tier: 10 alarms) | |
-| CloudWatch dashboard (phase 5)    | 1 dashboard at $3                   | $3.00 (free tier: 3 dashboards) |  |
-| Custom metric `TickLagMs` (phase 5) | 1 metric via EMF log lines, no API calls | $0.30 (free tier: 10 metrics) | |
-| X-Ray (phase 5)                   | ~86k producer and processor traces a month plus API requests; Lambda traces nearly every invocation at this rate. $5 per million after 100k free | $0 (up to ~$1.45 at the API's full quota) | |
-| SNS alarm topic (phase 5)         | email; first 1,000 notifications free | $0             |          |
-| GitHub OIDC roles, boundaries (phase 5) | IAM is free                   | $0               |          |
-| **Total**                         | list price                          | **~$17**         |          |
-| **Total with the always-free tier** | alarms, dashboard, metric and traces within their free allowances | **~$13** |    |
+| Kinesis Data Streams, 1 shard     | $0.015/shard-hour, always on        | ~$11             | — |
+| Kinesis PUT payload units         | ~130k records/month                 | < $0.01          | — |
+| Lambda (producer)                 | 43k invocations, ~200 ms, 256 MB    | free tier        | — |
+| Kinesis Data Firehose (phase 2)   | $0.029/GB, each record rounded up to 5 KB: ~0.65 GB billed | ~$0.02 | — |
+| Lambda (processor, phase 3)       | 43k invocations, ~400 ms, 512 MB (~9k GB-s) | free tier | ~330 ms per invocation at 512 MB, p50 over 45 to 122 batches a run (*LocalStack*, x86_64) |
+| DynamoDB (phase 3)                | on demand: ~260k writes, ~800k strongly consistent reads; ~30k items | ~$0.30 | — |
+| S3 raw/ (phase 2)                 | ~8.6k PUTs, ~10 MB held (30-day expiry) | < $0.05      | — |
+| S3 processed/ (phase 3)           | ~130k PUTs (one per symbol-hour per batch), ~5 MB/month added | ~$0.65 | — |
+| SQS dead-letter queue (phase 3)   | empty unless the processor fails    | free tier        | — |
+| Glue Data Catalog (phase 3)       | 1 table, projected partitions (none stored) | free tier | — |
+| Athena (phase 3)                  | $5/TB scanned, 10 MB minimum per query, 1 GiB cutoff | < $0.10 | — |
+| API Gateway REST API (phase 4)    | $3.50 per million requests; the 10k/day quota caps it at ~300k/month | < $0.10 (cap ~$1.05) | — |
+| Lambda (API, phase 4)             | 512 MB, a few ms per request (~50 ms for the largest `/bars`) | free tier | — |
+| DynamoDB reads (API, phase 4)     | one `GetItem` or two `Query` calls per request, eventually consistent | < $0.05 | — |
+| CloudWatch logs                   | a few MB, 14-day retention          | < $0.50          | — |
+| CloudWatch alarms (phase 5)       | 5 standard alarms at $0.10 (producer errors, iterator age, DLQ depth, API 5xx, API p95 latency) | $0.50 (free tier: 10 alarms) | — |
+| CloudWatch dashboard (phase 5)    | 1 dashboard at $3                   | $3.00 (free tier: 3 dashboards) | — |
+| Custom metric `TickLagMs` (phase 5) | 1 metric via EMF log lines, no API calls | $0.30 (free tier: 10 metrics) | — |
+| X-Ray (phase 5)                   | ~86k producer and processor traces a month plus API requests; Lambda traces nearly every invocation at this rate. $5 per million after 100k free | $0 (up to ~$1.45 at the API's full quota) | — |
+| SNS alarm topic (phase 5)         | email; first 1,000 notifications free | $0             | — |
+| GitHub OIDC roles, boundaries (phase 5) | IAM is free                   | $0               | — |
+| **Total**                         | list price                          | **~$17**         | — (no AWS run) |
+| **Total with the always-free tier** | alarms, dashboard, metric and traces within their free allowances | **~$13** | — (no AWS run) |
 
 ## Keeping it cheap
 

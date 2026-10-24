@@ -78,8 +78,9 @@ malformed record, a failed symbol or a Kinesis retry. The processor's own
 batches include the producer's 3 ticks a minute (LocalStack 4.14 keeps firing
 the schedule rule while it is disabled).
 
-The producer alone, at its default one run a minute, had a lag of p50 525 ms,
-p95 990 ms and max 996 ms over 28 batches (27 minutes on 2026-10-24). Its
+The producer alone, at its default one run a minute, had a lag of p50 422 ms,
+p95 1,023 ms and max 1,047 ms over 37 batches (37 minutes on a fresh stack,
+2026-10-24, 0 errors). Its
 three ticks arrive together, so its batches' oldest tick is barely older than
 the newest. Under load the oldest tick has waited a whole poll cycle, which is
 why lag at 10 ticks/s is higher.
