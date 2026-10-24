@@ -54,6 +54,16 @@ If writing a symbol fails, the handler returns
 Lambda resumes the shard from there; symbols that already succeeded are
 reprocessed harmlessly.
 
+## Metrics
+
+Each batch writes one CloudWatch Embedded Metric Format line to stdout:
+`MarketPipeline/TickLagMs` (dimension `FunctionName`), the age of the batch's
+oldest successfully written tick, from the producer's observation to now. That
+is the end-to-end latency the dashboard shows; Lambda's `IteratorAge` only
+covers the wait on the stream. EMF needs no API call or IAM permission, and
+`metrics.py` writes it directly because the JSON log formatter drops keys
+starting with `_`.
+
 ## Configuration
 
 | Variable           | Default             |                                   |

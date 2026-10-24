@@ -12,6 +12,7 @@ from processor.bars import Bar, build_bars, hour_start
 from processor.config import Settings
 from processor.lake import LakeWriter
 from processor.logging_utils import configure_logging
+from processor.metrics import put_metric
 from processor.records import RecordError, Tick, decode_record
 from processor.store import MarketStore
 
@@ -88,6 +89,7 @@ def process(
 
     bars = 0
     failed: list[str] = []
+    oldest_written: int | None = None
     for symbol, ticks in ticks_by_symbol.items():
         try:
             bars += process_symbol(symbol, ticks, store, lake)
@@ -97,6 +99,16 @@ def process(
                 extra={"symbol": symbol, "sequence_number": first_sequence[symbol]},
             )
             failed.append(first_sequence[symbol])
+            continue
+        oldest = min(t.ts for t in ticks)
+        oldest_written = oldest if oldest_written is None else min(oldest_written, oldest)
+
+    # End-to-end latency: how old the batch's oldest written tick was when its
+    # bar landed, from the producer's observation to now. Iterator age only
+    # covers the time a record waited on the stream.
+    lag_ms = None if oldest_written is None else max(now_ms - oldest_written, 0)
+    if lag_ms is not None:
+        put_metric("TickLagMs", lag_ms, "Milliseconds", now_ms=now_ms)
 
     log.info(
         "processed batch",
@@ -107,6 +119,7 @@ def process(
             "symbols": len(ticks_by_symbol),
             "bars": bars,
             "failed_symbols": len(failed),
+            "lag_ms": lag_ms,
         },
     )
     failures = [{"itemIdentifier": min(failed, key=int)}] if failed else []

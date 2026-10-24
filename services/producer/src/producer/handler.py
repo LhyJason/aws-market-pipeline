@@ -18,6 +18,10 @@ log = logging.getLogger(__name__)
 KINESIS_MAX_BATCH = 500  # hard limit on records per PutRecords call
 
 
+class PublishError(RuntimeError):
+    """Some ticks never reached the stream after every retry."""
+
+
 class KinesisClient(Protocol):
     """The slice of boto3's Kinesis client that the producer uses."""
 
@@ -70,7 +74,13 @@ def publish(
 
 
 def run(settings: Settings, feed: Feed, kinesis: KinesisClient) -> dict[str, Any]:
-    """One producer cycle. Pure wiring; all dependencies are injected so tests need no AWS."""
+    """One producer cycle. Pure wiring; all dependencies are injected so tests need no AWS.
+
+    Raises PublishError if any tick is still unsent after the retries, so the
+    run counts in the Lambda Errors metric that the producer alarm watches.
+    EventBridge's async retry may then resend ticks that did land, which the
+    processor's idempotent writes absorb.
+    """
     started = time.perf_counter()
     ticks = feed.fetch(settings.symbols)
     result = publish(ticks, settings.stream_name, kinesis)
@@ -83,7 +93,11 @@ def run(settings: Settings, feed: Feed, kinesis: KinesisClient) -> dict[str, Any
             **result,
         },
     )
-    return {"ok": result["failed"] == 0, **result}
+    if result["failed"]:
+        raise PublishError(
+            f"{result['failed']} of {len(ticks)} ticks never reached {settings.stream_name}"
+        )
+    return {"ok": True, **result}
 
 
 # Built once per container so warm invocations reuse the boto3 client.

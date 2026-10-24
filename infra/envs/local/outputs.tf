@@ -36,6 +36,14 @@ output "api_url" {
   value = "${var.localstack_endpoint}/_aws/execute-api/${module.api.rest_api_id}/${module.api.stage_name}"
 }
 
+output "alarm_topic_arn" {
+  value = module.observability.alarm_topic_arn
+}
+
+output "dashboard_name" {
+  value = module.observability.dashboard_name
+}
+
 # terraform output -raw api_key
 output "api_key" {
   value     = module.api.api_key

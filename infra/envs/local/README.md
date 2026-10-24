@@ -16,7 +16,7 @@ docker compose up -d                 # LocalStack 4.14.0
 python ../../../scripts/build_lambda.py processor --arch x86_64   # DuckDB wheels for the processor
 python ../../../scripts/build_lambda.py api --arch x86_64         # pydantic-core wheels for the API
 terraform init
-terraform apply                      # 49 resources, local state
+terraform apply                      # 52 resources, local state
 
 # the AWS CLI with LocalStack's dummy credentials
 $env:AWS_ACCESS_KEY_ID = 'test'; $env:AWS_SECRET_ACCESS_KEY = 'test'; $env:AWS_DEFAULT_REGION = 'us-east-1'
@@ -75,9 +75,13 @@ before the next `apply`.
   processor (DuckDB) and the API (pydantic-core) bundle native wheels, so both
   are built for x86_64 here (`lambda_architecture`; set `arm64` on Apple
   silicon).
-- **No CloudWatch alarms.** LocalStack 4.14 creates them but fails to describe
-  them back to the AWS provider, so `terraform apply` hangs; `create_alarms` is
-  false here.
+- **No CloudWatch alarms.** LocalStack 4.14 accepts `PutMetricAlarm` but
+  answers the provider's `DescribeAlarms` (sent as rpc-v2-cbor) with a 500, so
+  `terraform apply` hangs; `create_alarms` is false here. The alarm topic and
+  the dashboard are created, but the dashboard stays empty: LocalStack does
+  not publish most AWS metrics or parse the processor's EMF `TickLagMs` lines.
+- **No X-Ray traces.** The X-Ray API is not in the free edition. Active tracing
+  on the Lambdas and the API stage is accepted and records nothing.
 - **DynamoDB TTL is not enforced.** Bars get `expires_at` but LocalStack does
   not delete expired items unless configured to.
 - **AWS provider pinned below 6.58.** From 6.58.0 the provider waits for a new

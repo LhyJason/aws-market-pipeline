@@ -49,8 +49,8 @@ resource "aws_iam_role" "producer" {
   tags               = var.tags
 }
 
-# Least privilege: this role can write to its own log group and put records
-# on this one stream. Nothing else.
+# Least privilege: this role can write to its own log group, put records on
+# this one stream, and send traces. Nothing else.
 data "aws_iam_policy_document" "producer" {
   statement {
     sid       = "WriteLogs"
@@ -62,6 +62,14 @@ data "aws_iam_policy_document" "producer" {
     sid       = "PutToStream"
     actions   = ["kinesis:PutRecord", "kinesis:PutRecords"]
     resources = [aws_kinesis_stream.ticks.arn]
+  }
+
+  # X-Ray's write actions have no resource-level permissions, so this is one
+  # of the few statements on "*".
+  statement {
+    sid       = "WriteTraces"
+    actions   = ["xray:PutTraceSegments", "xray:PutTelemetryRecords"]
+    resources = ["*"]
   }
 }
 
@@ -83,6 +91,11 @@ resource "aws_lambda_function" "producer" {
 
   filename         = data.archive_file.producer.output_path
   source_code_hash = data.archive_file.producer.output_base64sha256
+
+  # Active: Lambda samples invocations and sends segments to X-Ray.
+  tracing_config {
+    mode = "Active"
+  }
 
   environment {
     variables = {

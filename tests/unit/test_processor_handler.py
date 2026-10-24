@@ -164,6 +164,28 @@ def test_a_minute_split_across_batches_merges(store, lake, market_table, s3, lak
     assert get(market_table, LATEST_SK)["price"] == Decimal("105.0")
 
 
+def emf_lines(capsys):
+    lines = [json.loads(line) for line in capsys.readouterr().out.splitlines() if line]
+    return [line for line in lines if "_aws" in line]
+
+
+def test_batch_emits_tick_lag_for_its_oldest_tick(store, lake, capsys, monkeypatch):
+    monkeypatch.setenv("AWS_LAMBDA_FUNCTION_NAME", "market-pipeline-dev-processor")
+
+    process(BATCH, store, lake)
+
+    [doc] = emf_lines(capsys)
+    assert doc["TickLagMs"] == NOW - (HOUR + 1_000)
+    assert doc["FunctionName"] == "market-pipeline-dev-processor"
+    assert doc["_aws"]["Timestamp"] == NOW
+    [directive] = doc["_aws"]["CloudWatchMetrics"]
+    assert directive == {
+        "Namespace": "MarketPipeline",
+        "Dimensions": [["FunctionName"]],
+        "Metrics": [{"Name": "TickLagMs", "Unit": "Milliseconds"}],
+    }
+
+
 # ---- records that are dropped -------------------------------------------------
 
 
@@ -219,6 +241,19 @@ def test_failed_symbol_reports_its_earliest_record(store, lake, market_table):
 
     assert result == {"batchItemFailures": [{"itemIdentifier": "2"}]}
     assert get(market_table, LATEST_SK)["price"] == Decimal("101.0")  # BTC still landed
+
+
+def test_tick_lag_ignores_failed_symbols(store, lake, capsys):
+    process(BATCH, store, FailingLake(lake, {"BTCUSDT"}))
+
+    [doc] = emf_lines(capsys)
+    assert doc["TickLagMs"] == NOW - (HOUR + 2_000)  # ETHUSDT's tick, not BTC's older one
+
+
+def test_no_tick_lag_when_nothing_was_written(store, lake, capsys):
+    process(BATCH, store, FailingLake(lake, {"BTCUSDT", "ETHUSDT"}))
+
+    assert emf_lines(capsys) == []
 
 
 def test_lowest_failed_sequence_is_reported(store, lake):

@@ -59,3 +59,9 @@ variable "manage_apigateway_account" {
   type        = bool
   default     = true
 }
+
+variable "alarm_email" {
+  description = "Email for alarm notifications (confirm the subscription from AWS's email); empty means no subscription"
+  type        = string
+  default     = ""
+}

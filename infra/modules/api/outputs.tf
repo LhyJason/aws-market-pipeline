@@ -32,3 +32,8 @@ output "api_key" {
   value     = aws_api_gateway_api_key.default.value
   sensitive = true
 }
+
+# The ApiName dimension of the AWS/ApiGateway metrics.
+output "rest_api_name" {
+  value = aws_api_gateway_rest_api.api.name
+}

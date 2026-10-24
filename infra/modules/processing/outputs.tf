@@ -21,3 +21,7 @@ output "dlq_arn" {
 output "event_source_mapping_uuid" {
   value = aws_lambda_event_source_mapping.stream.uuid
 }
+
+output "dlq_name" {
+  value = aws_sqs_queue.dlq.name
+}

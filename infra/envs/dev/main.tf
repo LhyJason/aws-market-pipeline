@@ -66,3 +66,20 @@ module "api" {
   manage_account_logging_role = var.manage_apigateway_account
   log_retention_days          = 14
 }
+
+module "observability" {
+  source = "../../modules/observability"
+
+  name_prefix             = local.name_prefix
+  alarm_email             = var.alarm_email
+  create_alarms           = true
+  producer_function_name  = module.ingest.function_name
+  processor_function_name = module.processing.function_name
+  api_function_name       = module.api.function_name
+  stream_name             = module.ingest.stream_name
+  firehose_name           = module.storage.firehose_name
+  table_name              = module.storage.table_name
+  dlq_name                = module.processing.dlq_name
+  api_name                = module.api.rest_api_name
+  api_stage               = module.api.stage_name
+}

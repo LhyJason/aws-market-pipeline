@@ -37,8 +37,8 @@ resource "aws_iam_role" "processor" {
 }
 
 # Least privilege: read this one stream, read and write this one table, write
-# objects under processed/ only, send failure records to its own DLQ, and log
-# to its own log group. The stream uses the AWS-managed aws/kinesis key, whose
+# objects under processed/ only, send failure records to its own DLQ, log
+# to its own log group, and send traces. The stream uses the AWS-managed aws/kinesis key, whose
 # key policy already lets account principals decrypt through Kinesis.
 data "aws_iam_policy_document" "processor" {
   statement {
@@ -82,6 +82,14 @@ data "aws_iam_policy_document" "processor" {
     actions   = ["sqs:SendMessage"]
     resources = [aws_sqs_queue.dlq.arn]
   }
+
+  # X-Ray's write actions have no resource-level permissions, so this is one
+  # of the few statements on "*".
+  statement {
+    sid       = "WriteTraces"
+    actions   = ["xray:PutTraceSegments", "xray:PutTelemetryRecords"]
+    resources = ["*"]
+  }
 }
 
 resource "aws_iam_role_policy" "processor" {
@@ -102,6 +110,11 @@ resource "aws_lambda_function" "processor" {
 
   filename         = data.archive_file.processor.output_path
   source_code_hash = data.archive_file.processor.output_base64sha256
+
+  # Active: Lambda samples invocations and sends segments to X-Ray.
+  tracing_config {
+    mode = "Active"
+  }
 
   environment {
     variables = {
@@ -155,25 +168,4 @@ resource "aws_lambda_event_source_mapping" "stream" {
   }
 
   depends_on = [aws_iam_role_policy.processor]
-}
-
-# ---- Alarm -----------------------------------------------------------------
-
-resource "aws_cloudwatch_metric_alarm" "iterator_age" {
-  count = var.create_alarms ? 1 : 0
-
-  alarm_name          = "${local.function_name}-iterator-age"
-  alarm_description   = "The processor is falling behind ${local.stream_name}"
-  namespace           = "AWS/Lambda"
-  metric_name         = "IteratorAge"
-  dimensions          = { FunctionName = aws_lambda_function.processor.function_name }
-  statistic           = "Maximum"
-  period              = 60
-  evaluation_periods  = 5
-  threshold           = var.iterator_age_alarm_ms
-  comparison_operator = "GreaterThanThreshold"
-  treat_missing_data  = "notBreaching"
-  alarm_actions       = var.alarm_actions
-  ok_actions          = var.alarm_actions
-  tags                = var.tags
 }

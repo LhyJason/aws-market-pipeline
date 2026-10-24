@@ -4,3 +4,4 @@ symbols             = ["BTCUSDT", "ETHUSDT", "SOLUSDT"]
 schedule_expression = "rate(1 minute)"
 ingest_enabled      = true
 lake_force_destroy  = false # true lets `terraform destroy` delete lake objects
+alarm_email         = "" # you@example.com; confirm the subscription from the AWS email
