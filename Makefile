@@ -1,4 +1,4 @@
-.PHONY: install lint fmt test test-integration test-chaos build tf-fmt tf-validate bootstrap plan apply destroy local-up local-down clean
+.PHONY: install lint fmt test test-integration test-chaos load load-sweep load-report build tf-fmt tf-validate bootstrap plan apply destroy local-up local-down clean
 
 PY  ?= python
 ENV ?= dev
@@ -6,6 +6,11 @@ TF_DIR := infra/envs/$(ENV)
 # arm64 for AWS; LocalStack runs Lambdas on the Docker host's architecture.
 ARCH ?= arm64
 LOCAL_ARCH ?= x86_64
+# Load test: ticks per second, seconds per run, symbols to spread over, and the sweep's rates.
+RATE ?= 50
+DURATION ?= 60
+SYMBOLS ?= 5
+RATES ?= 10 50 100 200
 
 ## ---- Python ---------------------------------------------------------------
 
@@ -29,6 +34,15 @@ test-integration: ## end-to-end against a deployed stack: TF_ENV_DIR, default in
 
 test-chaos:       ## inject failures into the LocalStack stack and check it copes (restores everything)
 	RUN_INTEGRATION=1 pytest -m chaos tests/integration -v
+
+load:             ## push RATE ticks/s for DURATION s onto the stream (TF_ENV_DIR, default LocalStack) and report
+	$(PY) scripts/load_test.py --rate $(RATE) --duration $(DURATION) --symbols $(SYMBOLS)
+
+load-sweep:       ## the load test at each of RATES
+	for rate in $(RATES); do 	  $(PY) scripts/load_test.py --rate $$rate --duration $(DURATION) --symbols $(SYMBOLS) || exit 1; 	done
+
+load-report:      ## re-report a saved run (RUN=<id>), or the last MINUTES (default 60) of processor logs
+	$(PY) scripts/load_report.py $(if $(RUN),$(RUN),--minutes $(or $(MINUTES),60))
 
 build:            ## package the Lambdas with native wheels (DuckDB, pydantic-core) for ARCH into .build/
 	$(PY) scripts/build_lambda.py processor --arch $(ARCH)

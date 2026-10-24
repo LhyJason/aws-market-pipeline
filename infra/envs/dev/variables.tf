@@ -20,9 +20,9 @@ variable "symbols" {
 }
 
 variable "feed_base_url" {
-  description = "Price feed base URL; use https://api.binance.us from the US"
+  description = "Price feed base URL; api.binance.com rejects requests from US regions such as us-east-1"
   type        = string
-  default     = "https://api.binance.com"
+  default     = "https://api.binance.us"
 }
 
 variable "schedule_expression" {
