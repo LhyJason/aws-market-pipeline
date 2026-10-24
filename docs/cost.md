@@ -1,7 +1,9 @@
 # Cost model
 
 Estimates for the dev environment at one producer run per minute and three
-symbols, us-east-1, on-demand pricing. Re-check against the AWS pricing pages
+symbols, us-east-1, on-demand pricing. The phase 5 monitoring is billed at
+list price below, but CloudWatch's and X-Ray's always-free allowances cover it
+at this size. Re-check against the AWS pricing pages
 before quoting numbers on a resume; fill the "measured" column from Cost
 Explorer at phase 6.
 
@@ -18,12 +20,18 @@ Explorer at phase 6.
 | SQS dead-letter queue (phase 3)   | empty unless the processor fails    | free tier        |          |
 | Glue Data Catalog (phase 3)       | 1 table, projected partitions (none stored) | free tier |          |
 | Athena (phase 3)                  | $5/TB scanned, 10 MB minimum per query, 1 GiB cutoff | < $0.10 |      |
-| CloudWatch alarm (phase 3)        | 1 metric alarm on iterator age      | $0.10            |          |
 | API Gateway REST API (phase 4)    | $3.50 per million requests; the 10k/day quota caps it at ~300k/month | < $0.10 (cap ~$1.05) | |
 | Lambda (API, phase 4)             | 512 MB, a few ms per request (~50 ms for the largest `/bars`) | free tier |  |
 | DynamoDB reads (API, phase 4)     | one `GetItem` or two `Query` calls per request, eventually consistent | < $0.05 | |
 | CloudWatch logs                   | a few MB, 14-day retention          | < $0.50          |          |
-| **Total**                         |                                     | **~$13**         |          |
+| CloudWatch alarms (phase 5)       | 5 standard alarms at $0.10 (producer errors, iterator age, DLQ depth, API 5xx, API p95 latency) | $0.50 (free tier: 10 alarms) | |
+| CloudWatch dashboard (phase 5)    | 1 dashboard at $3                   | $3.00 (free tier: 3 dashboards) |  |
+| Custom metric `TickLagMs` (phase 5) | 1 metric via EMF log lines, no API calls | $0.30 (free tier: 10 metrics) | |
+| X-Ray (phase 5)                   | ~86k producer and processor traces a month plus API requests; Lambda traces nearly every invocation at this rate. $5 per million after 100k free | $0 (up to ~$1.45 at the API's full quota) | |
+| SNS alarm topic (phase 5)         | email; first 1,000 notifications free | $0             |          |
+| GitHub OIDC roles, boundaries (phase 5) | IAM is free                   | $0               |          |
+| **Total**                         | list price                          | **~$17**         |          |
+| **Total with the always-free tier** | alarms, dashboard, metric and traces within their free allowances | **~$13** |    |
 
 ## Keeping it cheap
 
@@ -60,7 +68,28 @@ Explorer at phase 6.
 - The DynamoDB table has no point-in-time recovery: bars can be rebuilt by
   replaying `raw/`, and TTL keeps the table at about 30k items.
 - The bootstrap module creates an AWS Budget with an email alert at a
-  configurable threshold (default $15). Set it on day one.
+  configurable threshold (default $15). Set it on day one. At list price the
+  phase 5 dev stack (~$17) is above it, so the 100% forecast alert is the
+  sign that the free allowances no longer cover the monitoring.
+- Phase 5 monitoring is nearly all fixed-price and inside the always-free
+  allowances (10 alarms, 3 dashboards, 10 custom metrics, 100k X-Ray traces
+  a month). Outside them, the dashboard is the largest item at $3 a month;
+  delete it, or keep it under three dashboards per account, rather than
+  paying for it. Lambda traces the first request each second and 5% after
+  that, so traces grow with API traffic only past one request a second.
+- Deploys from GitHub cost nothing until a role variable is set: every job
+  in `deploy.yml` is skipped without one. Setting `AWS_DEPLOY_ROLE_ARN` makes
+  every push to main apply dev (and so start the Kinesis shard). On a
+  private repository, plans and deploys use GitHub Actions minutes (2,000
+  free a month); each job takes a few minutes, mostly building the Lambda
+  packages.
+- A prod stack (`infra/envs/prod`) would cost about the same as dev again,
+  roughly $13 to $17 a month. It keeps 24-hour Kinesis retention: anything
+  longer is extended retention at $0.02 per shard-hour (about +$14.60 a
+  month), more than the shard itself.
+- The chaos tests (`make test-chaos`) are free on LocalStack. On AWS
+  (`ALLOW_CHAOS_ON_AWS=1`) they cost cents, and they fire the DLQ and API
+  5xx alarms on purpose.
 - AWS changed its Free Tier in mid-2025: new accounts receive a credit
   allowance that expires after six months instead of 12 months of free usage.
   This project fits comfortably inside that allowance.

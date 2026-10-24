@@ -6,7 +6,7 @@ EventBridge schedule -> producer Lambda -> Kinesis Data Stream.
 | ----------------------------- | -------------------------------------------------------- |
 | `aws_kinesis_stream`          | provisioned, `shard_count` shards, KMS encrypted         |
 | `aws_lambda_function`         | python3.12 on arm64, X-Ray Active tracing, zipped from `producer_source_dir` |
-| `aws_iam_role` + inline policy| logs on its own group, `PutRecord(s)` on this stream only, X-Ray writes (`*`) |
+| `aws_iam_role` + inline policy| logs on its own group, `PutRecord(s)` on this stream only, X-Ray writes (`*`); `permissions_boundary` on the role (dev/prod: the env's boundary from bootstrap) |
 | `aws_cloudwatch_log_group`    | explicit retention                                       |
 | `aws_cloudwatch_event_rule`   | `schedule_expression`, toggled by `enabled`              |
 

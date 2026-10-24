@@ -5,7 +5,7 @@ Kinesis, stream processing into DynamoDB and an S3 data lake, SQL analytics with
 Athena, and a FastAPI endpoint on API Gateway. Everything is provisioned with
 Terraform and deployed through GitHub Actions using OIDC (no long-lived AWS keys).
 
-> Status: **Phase 4 (API)** done; phase 5 next. See [Phases](#phases).
+> Status: **Phase 5 (hardening)** done; phase 6 next. See [Phases](#phases).
 
 ## Architecture
 
@@ -22,7 +22,8 @@ flowchart LR
     S3 --> GLUE[Glue Catalog] --> ATH[Athena]
     CLIENT([client + API key]) --> APIGW[API Gateway<br/>REST API] --> API[Lambda<br/>FastAPI]
     API --> DDB
-    CW[CloudWatch<br/>logs, dashboards, alarms] -.-> P & C & API
+    CW[CloudWatch + X-Ray<br/>logs, dashboard, alarms, traces] -.-> P & C & API
+    CW -. alarms .-> SNS[SNS<br/>email]
 ```
 
 | Layer         | Services                                   | Phase |
@@ -42,7 +43,7 @@ cost model: [docs/cost.md](docs/cost.md).
 ```
 .
 ├── infra/
-│   ├── bootstrap/        # one-time: Terraform state bucket + cost budget
+│   ├── bootstrap/        # one-time: state bucket, cost budget, GitHub OIDC roles + permissions boundaries
 │   ├── modules/          # reusable Terraform modules (ingest, storage, processing, api, observability)
 │   └── envs/{local,dev,prod}/  # per-environment root modules (local = LocalStack)
 ├── services/
@@ -54,10 +55,10 @@ cost model: [docs/cost.md](docs/cost.md).
 │   └── notebooks/
 ├── tests/
 │   ├── unit/             # fast, no AWS (moto for AWS clients)
-│   └── integration/      # end to end against LocalStack (or dev)
+│   └── integration/      # end to end and chaos tests against LocalStack (or dev)
 ├── scripts/              # build_lambda.py (Lambda packages), query_lake.py (Athena SQL on DuckDB)
 ├── docs/                 # architecture, ADRs, cost
-└── .github/workflows/    # ci.yml (lint, test, validate), deploy.yml (OIDC + terraform apply)
+└── .github/             # ci.yml (lint, test, validate, actionlint), deploy.yml (OIDC plan/apply), composite actions
 ```
 
 ## Run it locally for free
@@ -76,6 +77,7 @@ terraform init && terraform apply
 cd ../../..
 python scripts/query_lake.py --localstack                # the Athena queries, on DuckDB
 make test-integration                                    # producer -> ... -> API, end to end
+make test-chaos                                          # inject failures, check the stack copes
 ```
 
 `make local-up` does the builds, `docker compose up` and `apply` in one go.
@@ -130,6 +132,18 @@ The saved Athena queries are in the workgroup named by
 `terraform output -raw athena_workgroup`. The API is at
 `terraform output -raw api_url`; see [API](#api).
 
+To deploy from GitHub instead, set the role ARNs from step 3's outputs as
+repository variables (see [infra/bootstrap/README.md](infra/bootstrap/README.md)).
+Pull requests then get a read-only plan, every push to main applies dev and
+smoke-tests the API, and prod is applied only by a manual workflow run
+([ADR 0008](docs/adr/0008-manual-prod-deploys.md)). Every job is skipped
+until its variable is set. Setting `AWS_DEPLOY_ROLE_ARN` starts real, billed
+deploys.
+
+Alarms email `alarm_email` (confirm the subscription from AWS's email), and
+the `market-pipeline-dev` CloudWatch dashboard shows the whole pipeline. See
+[docs/architecture.md](docs/architecture.md#observability).
+
 Tear down with `terraform destroy` in `infra/envs/dev` when not in use. The
 Kinesis shard is the only always-on cost (see [docs/cost.md](docs/cost.md)).
 
@@ -177,7 +191,7 @@ for an unknown symbol, 503 if DynamoDB fails. More in
 - [x] **2. Ingest to lake**: raw records landing in S3 via Kinesis Data Firehose (`raw/dt=/hour=`, 30-day expiry)
 - [x] **3. Processing and analytics**: processor Lambda (1-minute bars, idempotent, partial batch responses, SQS DLQ), DynamoDB, Parquet via DuckDB under `processed/`, Glue table with partition projection, Athena saved queries checked with DuckDB in CI
 - [x] **4. API**: FastAPI on Lambda (Mangum) behind an API Gateway REST API with an API key, usage-plan throttling and quota, rolling stats and spike/gap flags computed at read time, end-to-end integration tests on LocalStack
-- [ ] **5. Hardening**: OIDC deploys from GitHub, dashboards, alarms, X-Ray, chaos test
+- [x] **5. Hardening**: SNS-notified alarms (producer errors, iterator age, DLQ depth, API 5xx and p95 latency), a CloudWatch dashboard with end-to-end lag (EMF), X-Ray tracing on every Lambda and the API stage, GitHub OIDC plan/deploy roles with named actions and permissions boundaries, a prod environment deployed by manual run, a deploy smoke test, and chaos tests on LocalStack (poison records, a failing symbol to the DLQ, DynamoDB errors as 503, a bad deploy as 502)
 - [ ] **6. Portfolio polish**: diagram, measured numbers (throughput, p95 latency, monthly cost), demo
 
 ## Results
