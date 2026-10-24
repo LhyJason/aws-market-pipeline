@@ -1,30 +1,104 @@
 name: deploy
 
+# Pull requests: read-only terraform plan for dev and prod.
+# Push to main: apply dev, then smoke-test its API.
+# Manual run from main with environment=prod: apply prod. The repository is
+# private on GitHub Free, where environments have no required reviewers, so
+# starting this run is the approval. The prod job keeps `environment: prod`,
+# so reviewers can be added there later without changing this file.
+#
+# Every job stays skipped until its role variable is set (see the outputs of
+# infra/bootstrap). Setting AWS_DEPLOY_ROLE_ARN starts real, billed deploys on
+# every push to main.
+
 on:
+  pull_request:
+    paths:
+      - "infra/**"
+      - "services/**"
+      - "analytics/athena/**"
+      - "scripts/build_lambda.py"
+      - ".github/actions/**"
+      - ".github/workflows/deploy.yml"
   push:
     branches: [main]
+    paths:
+      - "infra/**"
+      - "services/**"
+      - "analytics/athena/**"
+      - "scripts/build_lambda.py"
+      - ".github/actions/**"
+      - ".github/workflows/deploy.yml"
   workflow_dispatch:
+    inputs:
+      environment:
+        description: Environment to apply
+        type: choice
+        options: [dev, prod]
+        default: dev
 
 permissions:
   id-token: write # OIDC token for AssumeRoleWithWebIdentity; no stored AWS keys
   contents: read
 
-concurrency:
-  group: deploy-dev
-  cancel-in-progress: false
+env:
+  # Repository variables; none of them is secret. The tfvars files are
+  # gitignored, so anything not set here takes the variable's default.
+  TF_VAR_alarm_email: ${{ vars.ALARM_EMAIL }}
+  TF_VAR_feed_base_url: ${{ vars.FEED_BASE_URL || 'https://api.binance.us' }}
 
 jobs:
+  plan:
+    name: terraform plan (${{ matrix.environment }})
+    if: github.event_name == 'pull_request' && vars.AWS_PLAN_ROLE_ARN != ''
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        environment: [dev, prod]
+    concurrency:
+      group: plan-${{ matrix.environment }}-${{ github.ref }}
+      cancel-in-progress: true
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.AWS_PLAN_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_REGION }}
+
+      - uses: ./.github/actions/terraform-init
+        with:
+          environment: ${{ matrix.environment }}
+          state-bucket: ${{ vars.TF_STATE_BUCKET }}
+          region: ${{ vars.AWS_REGION }}
+
+      # The plan role is read-only, so no state lock. The plan goes to the job
+      # summary rather than a PR comment, so the workflow needs no write access.
+      - name: terraform plan
+        working-directory: infra/envs/${{ matrix.environment }}
+        env:
+          ENVIRONMENT: ${{ matrix.environment }}
+        run: |
+          terraform plan -lock=false -input=false -no-color -out=tfplan
+          {
+            echo "### terraform plan ($ENVIRONMENT)"
+            echo '```'
+            terraform show -no-color tfplan | tail -c 60000
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
   dev:
     name: terraform apply (dev)
-    # Stays skipped until phase 5 creates the GitHub OIDC role. Then set these
-    # repository (or "dev" environment) variables:
-    #   AWS_DEPLOY_ROLE_ARN, AWS_REGION, TF_STATE_BUCKET
-    if: vars.AWS_DEPLOY_ROLE_ARN != ''
+    if: >-
+      vars.AWS_DEPLOY_ROLE_ARN != '' &&
+      (github.event_name == 'push' ||
+       (github.event_name == 'workflow_dispatch' && inputs.environment == 'dev'))
     runs-on: ubuntu-latest
     environment: dev
-    defaults:
-      run:
-        working-directory: infra/envs/dev
+    concurrency:
+      group: deploy-dev
+      cancel-in-progress: false
     steps:
       - uses: actions/checkout@v5
 
@@ -33,27 +107,42 @@ jobs:
           role-to-assume: ${{ vars.AWS_DEPLOY_ROLE_ARN }}
           aws-region: ${{ vars.AWS_REGION }}
 
-      - uses: actions/setup-python@v6
+      - uses: ./.github/actions/terraform-init
         with:
-          python-version: "3.12"
+          environment: dev
+          state-bucket: ${{ vars.TF_STATE_BUCKET }}
+          region: ${{ vars.AWS_REGION }}
 
-      # The processor bundles DuckDB; Terraform zips this directory.
-      - name: build processor package
-        working-directory: .
-        run: python scripts/build_lambda.py processor --arch arm64
-
-      - uses: hashicorp/setup-terraform@v3
+      - uses: ./.github/actions/terraform-apply
         with:
-          terraform_wrapper: false
+          environment: dev
 
-      - name: write backend config
-        env:
-          TF_STATE_BUCKET: ${{ vars.TF_STATE_BUCKET }}
-          AWS_REGION: ${{ vars.AWS_REGION }}
-        run: printf 'bucket = "%s"\nregion = "%s"\n' "$TF_STATE_BUCKET" "$AWS_REGION" > backend.hcl
+  prod:
+    name: terraform apply (prod)
+    if: >-
+      vars.AWS_PROD_DEPLOY_ROLE_ARN != '' &&
+      github.event_name == 'workflow_dispatch' &&
+      inputs.environment == 'prod' &&
+      github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    environment: prod
+    concurrency:
+      group: deploy-prod
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@v5
 
-      - run: terraform init -backend-config=backend.hcl -input=false
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.AWS_PROD_DEPLOY_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_REGION }}
 
-      - run: terraform plan -input=false -out=tfplan
+      - uses: ./.github/actions/terraform-init
+        with:
+          environment: prod
+          state-bucket: ${{ vars.TF_STATE_BUCKET }}
+          region: ${{ vars.AWS_REGION }}
 
-      - run: terraform apply -input=false tfplan
+      - uses: ./.github/actions/terraform-apply
+        with:
+          environment: prod

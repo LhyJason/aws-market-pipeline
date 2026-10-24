@@ -61,8 +61,26 @@ jobs:
           terraform init -backend=false -input=false
           terraform validate
 
+      - name: validate prod
+        working-directory: infra/envs/prod
+        run: |
+          terraform init -backend=false -input=false
+          terraform validate
+
       - name: validate local
         working-directory: infra/envs/local
         run: |
           terraform init -input=false
           terraform validate
+
+  actionlint:
+    name: actionlint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      # The image bundles shellcheck, which also checks the run: scripts.
+      - name: actionlint
+        uses: docker://rhysd/actionlint:1.7.7
+        with:
+          args: -color

@@ -37,9 +37,10 @@ data "aws_iam_policy_document" "lambda_assume" {
 }
 
 resource "aws_iam_role" "api" {
-  name               = local.function_name
-  assume_role_policy = data.aws_iam_policy_document.lambda_assume.json
-  tags               = var.tags
+  name                 = local.function_name
+  assume_role_policy   = data.aws_iam_policy_document.lambda_assume.json
+  permissions_boundary = var.permissions_boundary
+  tags                 = var.tags
 }
 
 # Least privilege: read-only on the one table (GetItem for LATEST, Query for
@@ -252,9 +253,10 @@ data "aws_iam_policy_document" "apigateway_assume" {
 resource "aws_iam_role" "apigateway_logs" {
   count = var.manage_account_logging_role ? 1 : 0
 
-  name               = "${var.name_prefix}-apigateway-logs"
-  assume_role_policy = data.aws_iam_policy_document.apigateway_assume.json
-  tags               = var.tags
+  name                 = "${var.name_prefix}-apigateway-logs"
+  assume_role_policy   = data.aws_iam_policy_document.apigateway_assume.json
+  permissions_boundary = var.permissions_boundary
+  tags                 = var.tags
 }
 
 resource "aws_iam_role_policy_attachment" "apigateway_logs" {
