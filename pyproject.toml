@@ -34,7 +34,7 @@ extend-exclude = [".venv", ".build"]
 select = ["E", "F", "I", "B", "UP", "SIM", "RUF"]
 
 [tool.ruff.lint.isort]
-known-first-party = ["producer", "processor", "api", "query_lake", "build_lambda", "load_report", "load_test"]
+known-first-party = ["producer", "processor", "api", "query_lake", "build_lambda", "load_report", "load_test", "demo"]
 
 [tool.coverage.run]
 source = ["services"]
