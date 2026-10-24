@@ -51,3 +51,18 @@ module "analytics" {
   lake_bucket = module.storage.bucket_name
   symbols     = var.symbols
 }
+
+module "api" {
+  source = "../../modules/api"
+
+  name_prefix = local.name_prefix
+  # Build first: python scripts/build_lambda.py api --arch arm64
+  package_dir                 = "${path.root}/../../../.build/api-arm64"
+  architecture                = "arm64"
+  table_name                  = module.storage.table_name
+  table_arn                   = module.storage.table_arn
+  symbols                     = var.symbols
+  quota_per_day               = var.api_quota_per_day
+  manage_account_logging_role = var.manage_apigateway_account
+  log_retention_days          = 14
+}

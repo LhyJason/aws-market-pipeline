@@ -47,3 +47,15 @@ variable "processor_batching_window_s" {
   type        = number
   default     = 0
 }
+
+variable "api_quota_per_day" {
+  description = "Requests per day the API key may make; a cost cap"
+  type        = number
+  default     = 10000
+}
+
+variable "manage_apigateway_account" {
+  description = "Create API Gateway's CloudWatch logging role and set it on the account (one per account and region); false if something else manages it"
+  type        = bool
+  default     = true
+}

@@ -25,3 +25,19 @@ output "processor_function_name" {
 output "processor_dlq_url" {
   value = module.processing.dlq_url
 }
+
+output "api_function_name" {
+  value = module.api.function_name
+}
+
+# LocalStack serves REST APIs under its edge endpoint, not at the AWS-style
+# invoke URL Terraform computes.
+output "api_url" {
+  value = "${var.localstack_endpoint}/_aws/execute-api/${module.api.rest_api_id}/${module.api.stage_name}"
+}
+
+# terraform output -raw api_key
+output "api_key" {
+  value     = module.api.api_key
+  sensitive = true
+}

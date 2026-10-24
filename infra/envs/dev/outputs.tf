@@ -45,3 +45,21 @@ output "glue_database" {
 output "athena_workgroup" {
   value = module.analytics.workgroup
 }
+
+output "api_url" {
+  value = module.api.invoke_url
+}
+
+output "api_log_group" {
+  value = module.api.log_group_name
+}
+
+output "api_access_log_group" {
+  value = module.api.access_log_group_name
+}
+
+# terraform output -raw api_key
+output "api_key" {
+  value     = module.api.api_key
+  sensitive = true
+}

@@ -29,6 +29,8 @@ from api.store import Latest, MarketReader, StoredBar
 
 configure_logging()
 log = logging.getLogger(__name__)
+# Mangum logs every request at INFO too; the middleware below already does, with more fields.
+logging.getLogger("mangum").setLevel(logging.WARNING)
 
 # The processor's symbol rule (processor/records.py), case-insensitive here:
 # symbols are stored upper case and requests are uppercased before the read.
