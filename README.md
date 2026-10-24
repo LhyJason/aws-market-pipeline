@@ -9,22 +9,11 @@ Terraform and deployed through GitHub Actions using OIDC (no long-lived AWS keys
 
 ## Architecture
 
-```mermaid
-flowchart LR
-    EB[EventBridge<br/>rate(1 min)] --> P[Lambda<br/>producer]
-    FEED[(Public price feed)] -.-> P
-    P --> K[Kinesis Data Stream]
-    K --> FH[Kinesis Data Firehose] --> RAW[(S3 data lake<br/>raw/ JSON, 30 days)]
-    K --> C[Lambda<br/>processor]
-    C -. failed batches .-> DLQ[SQS DLQ]
-    C --> DDB[(DynamoDB<br/>latest + 1-min bars)]
-    C --> S3[(S3 data lake<br/>Parquet, symbol/dt/hour)]
-    S3 --> GLUE[Glue Catalog] --> ATH[Athena]
-    CLIENT([client + API key]) --> APIGW[API Gateway<br/>REST API] --> API[Lambda<br/>FastAPI]
-    API --> DDB
-    CW[CloudWatch + X-Ray<br/>logs, dashboard, alarms, traces] -.-> P & C & API
-    CW -. alarms .-> SNS[SNS<br/>email]
-```
+![Architecture: an EventBridge schedule invokes the producer Lambda, which puts ticks on a Kinesis stream; Firehose lands them raw in S3, and the processor Lambda writes bars to DynamoDB and Parquet to S3 for Glue and Athena; API Gateway and a FastAPI Lambda serve DynamoDB to clients with an API key; GitHub Actions deploys through OIDC](docs/architecture.svg)
+
+The diagram is drawn from [docs/diagrams/architecture.d2](docs/diagrams/architecture.d2)
+with [D2](https://d2lang.com) 0.9.0 (`make diagram`); CI renders it again and
+fails if the committed SVG is out of date.
 
 | Layer         | Services                                   | Phase |
 | ------------- | ------------------------------------------ | ----- |
@@ -82,6 +71,26 @@ make load RATE=50 DURATION=60                            # load test: throughput
 ```
 
 `make local-up` does the builds, `docker compose up` and `apply` in one go.
+
+### Demo
+
+`make demo` (or `python scripts/demo.py`) runs all of it as a guided tour and
+times each step: build, start LocalStack, apply, put a live tick through to
+the API, a 20-second load test, two chaos tests, the Athena queries on
+DuckDB, then teardown (`--keep` leaves the stack up).
+
+![The demo: 9 steps from building the Lambda packages to teardown, about three minutes](docs/demo/demo.gif)
+
+From a fresh clone on a Windows laptop it took 4 minutes: 53 s for the
+virtualenv and `pip install`, then 3 minutes for the demo, two of them in
+`terraform apply`. That was with the Docker images already pulled; the first
+run also downloads `localstack/localstack:4.14.0` (1.8 GB unpacked) and the
+Lambda Python 3.12 image (0.75 GB) at the first invocation. On Windows, clone
+to a short path (for example `C:\src`): botocore's data files are deep enough
+to hit the 260-character path limit under a long one.
+The recording is [docs/demo/demo.cast](docs/demo/demo.cast) (asciicast v2,
+from `scripts/demo.py --record`), turned into a GIF with
+[agg](https://github.com/asciinema/agg).
 The load test and what its LocalStack numbers mean: [docs/load-test.md](docs/load-test.md).
 
 ## Quickstart

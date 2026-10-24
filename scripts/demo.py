@@ -69,6 +69,28 @@ class Console:
         self.write(text + "\n")
 
 
+class Indented:
+    """A file-like wrapper that indents every line it passes on."""
+
+    def __init__(self, console: Console, prefix: str = "    ") -> None:
+        self.console = console
+        self.prefix = prefix
+        self.at_line_start = True
+
+    def write(self, text: str) -> int:
+        out = []
+        for char in text:
+            if self.at_line_start and char != "\n":
+                out.append(self.prefix)
+            out.append(char)
+            self.at_line_start = char == "\n"
+        self.console.write("".join(out))
+        return len(text)
+
+    def flush(self) -> None:
+        self.console.flush()
+
+
 class Demo:
     def __init__(self, console: Console, *, verbose: bool) -> None:
         self.console = console
@@ -119,8 +141,8 @@ class Demo:
 
     @contextlib.contextmanager
     def captured(self) -> Iterator[None]:
-        """Send what in-process scripts print to the console, so it is recorded too."""
-        with contextlib.redirect_stdout(self.console):  # type: ignore[type-var]
+        """Send what in-process scripts print to the console, indented, so it is recorded too."""
+        with contextlib.redirect_stdout(Indented(self.console)):  # type: ignore[type-var]
             yield
 
     def summary(self) -> None:
@@ -197,11 +219,20 @@ def start_localstack(demo: Demo) -> None:
 
 
 def apply(demo: Demo, terraform: str, arch: str) -> dict[str, Any]:
-    demo.run([terraform, "init", "-input=false"], cwd=LOCAL, show=interesting("initialized"))
     demo.run(
-        [terraform, "apply", "-auto-approve", "-input=false", f"-var=lambda_architecture={arch}"],
+        [terraform, "init", "-input=false", "-no-color"], cwd=LOCAL, show=interesting("initialized")
+    )
+    demo.run(
+        [
+            terraform,
+            "apply",
+            "-auto-approve",
+            "-input=false",
+            "-no-color",
+            f"-var=lambda_architecture={arch}",
+        ],
         cwd=LOCAL,
-        show=interesting("Apply complete", "Error"),
+        show=interesting("Apply complete", "Error:"),
     )
     return load_report.terraform_outputs(LOCAL)
 

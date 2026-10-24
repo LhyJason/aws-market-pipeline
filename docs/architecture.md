@@ -9,6 +9,12 @@ servers to patch.
 
 ## Data flow
 
+![Architecture diagram](architecture.svg)
+
+The diagram's source is [diagrams/architecture.d2](diagrams/architecture.d2);
+`make diagram` renders it with D2 0.9.0, and CI fails if the committed SVG is
+not what the source renders to.
+
 1. **Schedule.** An EventBridge rule fires the producer Lambda every minute
    (configurable). One-minute granularity is the EventBridge floor; a Fargate
    task on a websocket feed is the upgrade path if sub-minute data is ever
