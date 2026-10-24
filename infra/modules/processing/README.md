@@ -5,12 +5,14 @@ and the lake's `processed/` prefix. Code: `services/processor`.
 
 | Resource                             | Notes                                                        |
 | ------------------------------------ | ------------------------------------------------------------ |
-| `aws_lambda_function`                | python3.12, `architecture` (arm64 on AWS), 512 MB, 60 s, zipped from `package_dir` |
+| `aws_lambda_function`                | python3.12, `architecture` (arm64 on AWS), 512 MB, 60 s, X-Ray Active tracing, zipped from `package_dir` |
 | `aws_lambda_event_source_mapping`    | batch size 100, `TRIM_HORIZON`, `ReportBatchItemFailures`, `bisect_batch_on_function_error`, 5 retries, 1-hour max record age, parallelization 1 |
 | `aws_sqs_queue`                      | on-failure destination (DLQ), SSE, 14-day retention          |
-| `aws_iam_role` + inline policy       | read on the one stream, Get/Put/Update/Query on the one table, `PutObject` on `processed/*`, `SendMessage` on its DLQ, logs to its own group |
+| `aws_iam_role` + inline policy       | read on the one stream, Get/Put/Update/Query on the one table, `PutObject` on `processed/*`, `SendMessage` on its DLQ, logs to its own group, X-Ray `PutTraceSegments`/`PutTelemetryRecords` (`*`, the actions take no ARN) |
 | `aws_cloudwatch_log_group`           | explicit retention                                           |
-| `aws_cloudwatch_metric_alarm`        | `IteratorAge` max > 5 min for 5 minutes; `create_alarms` (off in local) |
+
+The iterator-age and DLQ alarms live in the `observability` module, which
+reads `function_name` and `dlq_name` from here.
 
 ## Packaging
 

@@ -36,7 +36,6 @@ module "processing" {
   table_arn       = module.storage.table_arn
   lake_bucket     = module.storage.bucket_name
   lake_bucket_arn = module.storage.bucket_arn
-  create_alarms   = false
 }
 
 module "api" {
@@ -51,6 +50,25 @@ module "api" {
   symbols      = var.symbols
   # The account-level logging role is an AWS concern; LocalStack needs none.
   manage_account_logging_role = false
+}
+
+module "observability" {
+  source = "../../modules/observability"
+
+  name_prefix = local.name_prefix
+  # The topic and dashboard work on LocalStack 4.14; alarms make apply hang
+  # (DescribeAlarms returns 500), and there is nobody to email.
+  alarm_email             = ""
+  create_alarms           = false
+  producer_function_name  = module.ingest.function_name
+  processor_function_name = module.processing.function_name
+  api_function_name       = module.api.function_name
+  stream_name             = module.ingest.stream_name
+  firehose_name           = module.storage.firehose_name
+  table_name              = module.storage.table_name
+  dlq_name                = module.processing.dlq_name
+  api_name                = module.api.rest_api_name
+  api_stage               = module.api.stage_name
 }
 
 # No analytics module here: Glue and Athena are not in LocalStack's free

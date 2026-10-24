@@ -58,6 +58,14 @@ output "api_access_log_group" {
   value = module.api.access_log_group_name
 }
 
+output "alarm_topic_arn" {
+  value = module.observability.alarm_topic_arn
+}
+
+output "dashboard_name" {
+  value = module.observability.dashboard_name
+}
+
 # terraform output -raw api_key
 output "api_key" {
   value     = module.api.api_key

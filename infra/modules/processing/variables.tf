@@ -97,24 +97,6 @@ variable "timeout_s" {
   default     = 60
 }
 
-variable "iterator_age_alarm_ms" {
-  description = "Alarm when the stream's oldest unprocessed record is older than this"
-  type        = number
-  default     = 300000
-}
-
-variable "create_alarms" {
-  description = "Create the CloudWatch alarms; LocalStack 4.14 cannot describe alarms back to the AWS provider, so local turns this off"
-  type        = bool
-  default     = true
-}
-
-variable "alarm_actions" {
-  description = "ARNs notified by the iterator-age alarm (SNS arrives in phase 5)"
-  type        = list(string)
-  default     = []
-}
-
 variable "log_retention_days" {
   description = "CloudWatch log retention for the processor"
   type        = number

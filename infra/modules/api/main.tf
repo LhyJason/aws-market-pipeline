@@ -43,7 +43,7 @@ resource "aws_iam_role" "api" {
 }
 
 # Least privilege: read-only on the one table (GetItem for LATEST, Query for
-# bars; no Scan), and logs to its own log group.
+# bars; no Scan), logs to its own log group, and traces.
 data "aws_iam_policy_document" "api" {
   statement {
     sid       = "WriteLogs"
@@ -55,6 +55,14 @@ data "aws_iam_policy_document" "api" {
     sid       = "ReadMarketTable"
     actions   = ["dynamodb:GetItem", "dynamodb:Query"]
     resources = [var.table_arn]
+  }
+
+  # X-Ray's write actions have no resource-level permissions, so this is one
+  # of the few statements on "*".
+  statement {
+    sid       = "WriteTraces"
+    actions   = ["xray:PutTraceSegments", "xray:PutTelemetryRecords"]
+    resources = ["*"]
   }
 }
 
@@ -76,6 +84,11 @@ resource "aws_lambda_function" "api" {
 
   filename         = data.archive_file.api.output_path
   source_code_hash = data.archive_file.api.output_base64sha256
+
+  # Active: Lambda samples invocations and sends segments to X-Ray.
+  tracing_config {
+    mode = "Active"
+  }
 
   environment {
     variables = {
@@ -265,6 +278,9 @@ resource "aws_api_gateway_stage" "api" {
   rest_api_id   = aws_api_gateway_rest_api.api.id
   deployment_id = aws_api_gateway_deployment.api.id
   stage_name    = var.stage_name
+
+  # API Gateway samples requests and starts the trace the Lambda continues.
+  xray_tracing_enabled = true
 
   dynamic "access_log_settings" {
     for_each = var.enable_access_logs ? [1] : []

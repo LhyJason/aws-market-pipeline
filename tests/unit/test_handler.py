@@ -6,7 +6,7 @@ from moto import mock_aws
 
 from producer.config import Settings
 from producer.feed import Tick
-from producer.handler import KINESIS_MAX_BATCH, publish, run
+from producer.handler import KINESIS_MAX_BATCH, PublishError, publish, run
 
 TS = 1_729_700_000_000
 
@@ -118,12 +118,12 @@ def test_records_are_newline_delimited_json(kinesis):
     assert [json.loads(line)["symbol"] for line in lines] == ["SYM0", "SYM1"]
 
 
-def test_run_reports_not_ok_when_records_never_land():
+def test_run_raises_when_records_never_land():
+    # Raising makes the run count in the Lambda Errors metric the alarm watches.
     settings = Settings(stream_name="ticks", symbols=("SYM0",))
 
-    result = run(settings, StaticFeed(make_ticks(1)), AlwaysFailingKinesis())
-
-    assert result == {"ok": False, "sent": 0, "failed": 1}
+    with pytest.raises(PublishError, match="1 of 1 ticks never reached ticks"):
+        run(settings, StaticFeed(make_ticks(1)), AlwaysFailingKinesis())
 
 
 # ---- publish(): batching and retry semantics --------------------------------

@@ -12,8 +12,10 @@ EventBridge (rate) -> lambda_handler -> BinanceFeed.fetch -> publish -> Kinesis 
 - `feed.py`: `Tick` record and the `BinanceFeed` implementation (stdlib only).
   Any object with `fetch(symbols) -> list[Tick]` satisfies the `Feed` protocol.
 - `handler.py`: `publish()` batches records (max 500 per call) and retries
-  partial failures; `run()` is the dependency-injected cycle; `lambda_handler`
-  wires real dependencies once per container.
+  partial failures; `run()` is the dependency-injected cycle and raises
+  `PublishError` if ticks are still unsent after the retries, so the run
+  counts as a Lambda error (the producer-errors alarm watches that);
+  `lambda_handler` wires real dependencies once per container.
 - `logging_utils.py`: JSON log lines; `extra={...}` fields become top-level
   keys, queryable in CloudWatch Logs Insights.
 

@@ -5,8 +5,8 @@ read-only. Code: `services/api`.
 
 | Resource                                  | Notes                                                      |
 | ----------------------------------------- | ---------------------------------------------------------- |
-| `aws_lambda_function`                     | python3.12, `architecture` (arm64 on AWS), 512 MB, 10 s, handler `api.app.handler`, zipped from `package_dir` |
-| `aws_iam_role` + inline policy            | `GetItem` and `Query` on the one table (no `Scan`, no writes), logs to its own group |
+| `aws_lambda_function`                     | python3.12, `architecture` (arm64 on AWS), 512 MB, 10 s, handler `api.app.handler`, X-Ray Active tracing, zipped from `package_dir` |
+| `aws_iam_role` + inline policy            | `GetItem` and `Query` on the one table (no `Scan`, no writes), logs to its own group, X-Ray writes (`*`) |
 | `aws_api_gateway_rest_api`                | regional; one resource per route, no `{proxy+}`            |
 | `aws_api_gateway_method` / `_integration` | `GET`, Lambda proxy (`AWS_PROXY`); `/health` open, `/prices/{symbol}` and `/bars/{symbol}` need an API key |
 | `aws_api_gateway_deployment` + `_stage`   | stage `v1`; redeployed when any route changes              |
