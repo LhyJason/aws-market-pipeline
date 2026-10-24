@@ -1,4 +1,4 @@
-.PHONY: install lint fmt test test-integration build tf-fmt tf-validate bootstrap plan apply destroy local-up local-down clean
+.PHONY: install lint fmt test test-integration test-chaos build tf-fmt tf-validate bootstrap plan apply destroy local-up local-down clean
 
 PY  ?= python
 ENV ?= dev
@@ -25,7 +25,10 @@ test:             ## unit tests with coverage (no AWS access needed)
 	pytest --cov=services --cov-report=term-missing
 
 test-integration: ## end-to-end against a deployed stack: TF_ENV_DIR, default infra/envs/local (LocalStack)
-	RUN_INTEGRATION=1 pytest -m integration tests/integration -v
+	RUN_INTEGRATION=1 pytest -m "integration and not chaos" tests/integration -v
+
+test-chaos:       ## inject failures into the LocalStack stack and check it copes (restores everything)
+	RUN_INTEGRATION=1 pytest -m chaos tests/integration -v
 
 build:            ## package the Lambdas with native wheels (DuckDB, pydantic-core) for ARCH into .build/
 	$(PY) scripts/build_lambda.py processor --arch $(ARCH)
