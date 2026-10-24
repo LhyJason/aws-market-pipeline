@@ -44,9 +44,10 @@ data "aws_iam_policy_document" "lambda_assume" {
 }
 
 resource "aws_iam_role" "producer" {
-  name               = local.function_name
-  assume_role_policy = data.aws_iam_policy_document.lambda_assume.json
-  tags               = var.tags
+  name                 = local.function_name
+  assume_role_policy   = data.aws_iam_policy_document.lambda_assume.json
+  permissions_boundary = var.permissions_boundary
+  tags                 = var.tags
 }
 
 # Least privilege: this role can write to its own log group, put records on

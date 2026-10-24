@@ -13,3 +13,19 @@ output "backend_hcl" {
     region = "${var.aws_region}"
   EOT
 }
+
+# Set as repository variables only when you mean to deploy (and pay):
+#   AWS_PLAN_ROLE_ARN         plans on pull requests (read-only)
+#   AWS_DEPLOY_ROLE_ARN       applies dev on every push to main
+#   AWS_PROD_DEPLOY_ROLE_ARN  applies prod on a manual workflow run
+output "plan_role_arn" {
+  value = aws_iam_role.plan.arn
+}
+
+output "deploy_role_arns" {
+  value = { for env, role in aws_iam_role.deploy : env => role.arn }
+}
+
+output "permissions_boundary_arns" {
+  value = { for env, policy in aws_iam_policy.boundary : env => policy.arn }
+}

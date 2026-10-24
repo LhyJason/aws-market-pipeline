@@ -55,6 +55,12 @@ variable "log_retention_days" {
   default     = 14
 }
 
+variable "permissions_boundary" {
+  description = "ARN of the permissions boundary set on every IAM role here (infra/bootstrap creates one per environment); null for none"
+  type        = string
+  default     = null
+}
+
 variable "tags" {
   description = "Extra tags merged with the provider default tags"
   type        = map(string)

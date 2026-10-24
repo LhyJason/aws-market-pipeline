@@ -1,0 +1,8 @@
+aws_region                = "us-east-1"
+feed_base_url             = "https://api.binance.com" # https://api.binance.us from the US
+symbols                   = ["BTCUSDT", "ETHUSDT", "SOLUSDT"]
+schedule_expression       = "rate(1 minute)"
+ingest_enabled            = true
+lake_force_destroy        = false             # keep prod data on destroy
+alarm_email               = "you@example.com" # confirm the subscription from the AWS email
+manage_apigateway_account = false             # dev sets the account-wide API Gateway logging role

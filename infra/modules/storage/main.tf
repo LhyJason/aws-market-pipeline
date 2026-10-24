@@ -153,9 +153,10 @@ data "aws_iam_policy_document" "firehose_assume" {
 }
 
 resource "aws_iam_role" "firehose" {
-  name               = "${local.firehose_name}-firehose"
-  assume_role_policy = data.aws_iam_policy_document.firehose_assume.json
-  tags               = var.tags
+  name                 = "${local.firehose_name}-firehose"
+  assume_role_policy   = data.aws_iam_policy_document.firehose_assume.json
+  permissions_boundary = var.permissions_boundary
+  tags                 = var.tags
 }
 
 # Least privilege: read this one stream, write only under raw/ and errors/ in

@@ -1,0 +1,44 @@
+name: terraform apply
+description: Plan and apply an initialized environment, then smoke-test its API
+
+inputs:
+  environment:
+    description: Directory under infra/envs (dev or prod)
+    required: true
+  smoke-symbol:
+    description: Symbol the smoke test asks /prices for
+    default: BTCUSDT
+
+runs:
+  using: composite
+  steps:
+    - name: terraform apply
+      shell: bash
+      working-directory: infra/envs/${{ inputs.environment }}
+      run: |
+        terraform plan -input=false -lock-timeout=5m -out=tfplan
+        terraform apply -input=false -lock-timeout=5m tfplan
+
+    # Catches a bad deploy before anything else ships: /health must answer,
+    # and /prices must get through the key check to Lambda and DynamoDB. 404
+    # is fine on a new stack with no tick yet; 403 means the key or usage plan
+    # is broken, 5xx the Lambda or the table.
+    - name: smoke test
+      shell: bash
+      working-directory: infra/envs/${{ inputs.environment }}
+      env:
+        SYMBOL: ${{ inputs.smoke-symbol }}
+      run: |
+        url=$(terraform output -raw api_url)
+        key=$(terraform output -raw api_key)
+        echo "::add-mask::$key"
+        curl -fsS --retry 6 --retry-delay 10 --retry-all-errors "$url/health"
+        echo
+        code=$(curl -sS -o /dev/null -w '%{http_code}' -H "x-api-key: $key" "$url/prices/$SYMBOL")
+        case "$code" in
+          200 | 404) echo "GET /prices/$SYMBOL: $code" ;;
+          *)
+            echo "::error::GET /prices/$SYMBOL returned $code"
+            exit 1
+            ;;
+        esac

@@ -1,0 +1,42 @@
+name: terraform init
+description: Build the Lambda packages for arm64 and init an environment against the S3 state bucket
+
+inputs:
+  environment:
+    description: Directory under infra/envs (dev or prod)
+    required: true
+  state-bucket:
+    description: Terraform state bucket from infra/bootstrap
+    required: true
+  region:
+    description: Region of the state bucket
+    required: true
+
+runs:
+  using: composite
+  steps:
+    - uses: actions/setup-python@v6
+      with:
+        python-version: "3.12"
+
+    # The processor bundles DuckDB and the API pydantic-core, both native
+    # wheels; Terraform zips .build/<name>-arm64 for each.
+    - name: build Lambda packages
+      shell: bash
+      run: |
+        python scripts/build_lambda.py processor --arch arm64
+        python scripts/build_lambda.py api --arch arm64
+
+    - uses: hashicorp/setup-terraform@v3
+      with:
+        terraform_wrapper: false
+
+    - name: terraform init
+      shell: bash
+      working-directory: infra/envs/${{ inputs.environment }}
+      env:
+        TF_STATE_BUCKET: ${{ inputs.state-bucket }}
+        STATE_REGION: ${{ inputs.region }}
+      run: |
+        printf 'bucket = "%s"\nregion = "%s"\n' "$TF_STATE_BUCKET" "$STATE_REGION" > backend.hcl
+        terraform init -backend-config=backend.hcl -input=false

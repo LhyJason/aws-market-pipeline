@@ -38,7 +38,8 @@ tf-fmt:           ## check HCL formatting
 
 tf-validate:      ## validate every root module without touching a backend
 	cd infra/bootstrap && terraform init -backend=false -input=false >/dev/null && terraform validate
-	cd $(TF_DIR) && terraform init -backend=false -input=false >/dev/null && terraform validate
+	cd infra/envs/dev && terraform init -backend=false -input=false >/dev/null && terraform validate
+	cd infra/envs/prod && terraform init -backend=false -input=false >/dev/null && terraform validate
 	cd infra/envs/local && terraform init -input=false >/dev/null && terraform validate
 
 bootstrap:        ## one-time: state bucket + budget (local state)

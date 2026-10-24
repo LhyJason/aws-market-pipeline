@@ -1,24 +1,33 @@
+data "aws_caller_identity" "current" {}
+data "aws_partition" "current" {}
+
 locals {
   name_prefix = "${var.project}-${var.environment}"
+
+  # Created by infra/bootstrap. The deploy role may only create roles that
+  # carry it, so every module sets it on its roles.
+  permissions_boundary = "arn:${data.aws_partition.current.partition}:iam::${data.aws_caller_identity.current.account_id}:policy/${local.name_prefix}-workload-boundary"
 }
 
 module "ingest" {
   source = "../../modules/ingest"
 
-  name_prefix         = local.name_prefix
-  producer_source_dir = "${path.root}/../../../services/producer/src"
-  symbols             = var.symbols
-  feed_base_url       = var.feed_base_url
-  schedule_expression = var.schedule_expression
-  enabled             = var.ingest_enabled
-  shard_count         = 1
-  retention_hours     = 24
-  log_retention_days  = 14
+  permissions_boundary = local.permissions_boundary
+  name_prefix          = local.name_prefix
+  producer_source_dir  = "${path.root}/../../../services/producer/src"
+  symbols              = var.symbols
+  feed_base_url        = var.feed_base_url
+  schedule_expression  = var.schedule_expression
+  enabled              = var.ingest_enabled
+  shard_count          = 1
+  retention_hours      = 24
+  log_retention_days   = 14
 }
 
 module "storage" {
   source = "../../modules/storage"
 
+  permissions_boundary = local.permissions_boundary
   name_prefix          = local.name_prefix
   source_stream_arn    = module.ingest.stream_arn
   raw_expiration_days  = 30
@@ -31,7 +40,8 @@ module "storage" {
 module "processing" {
   source = "../../modules/processing"
 
-  name_prefix = local.name_prefix
+  permissions_boundary = local.permissions_boundary
+  name_prefix          = local.name_prefix
   # Build first: python scripts/build_lambda.py processor --arch arm64
   package_dir        = "${path.root}/../../../.build/processor-arm64"
   architecture       = "arm64"
@@ -55,7 +65,8 @@ module "analytics" {
 module "api" {
   source = "../../modules/api"
 
-  name_prefix = local.name_prefix
+  permissions_boundary = local.permissions_boundary
+  name_prefix          = local.name_prefix
   # Build first: python scripts/build_lambda.py api --arch arm64
   package_dir                 = "${path.root}/../../../.build/api-arm64"
   architecture                = "arm64"
