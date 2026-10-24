@@ -19,7 +19,9 @@ Explorer at phase 6.
 | Glue Data Catalog (phase 3)       | 1 table, projected partitions (none stored) | free tier |          |
 | Athena (phase 3)                  | $5/TB scanned, 10 MB minimum per query, 1 GiB cutoff | < $0.10 |      |
 | CloudWatch alarm (phase 3)        | 1 metric alarm on iterator age      | $0.10            |          |
-| API Gateway HTTP API (phase 4)    | $1 per million requests             | < $0.10          |          |
+| API Gateway REST API (phase 4)    | $3.50 per million requests; the 10k/day quota caps it at ~300k/month | < $0.10 (cap ~$1.05) | |
+| Lambda (API, phase 4)             | 512 MB, a few ms per request (~50 ms for the largest `/bars`) | free tier |  |
+| DynamoDB reads (API, phase 4)     | one `GetItem` or two `Query` calls per request, eventually consistent | < $0.05 | |
 | CloudWatch logs                   | a few MB, 14-day retention          | < $0.50          |          |
 | **Total**                         |                                     | **~$13**         |          |
 
@@ -48,6 +50,13 @@ Explorer at phase 6.
   last 7 days so partition projection prunes the rest. The workgroup cancels
   any query that would scan more than 1 GiB, and query results expire after
   7 days. To query for free, run `scripts/query_lake.py` with DuckDB instead.
+- The API costs only when called. Its usage plan allows 10,000 requests a
+  day, which caps API Gateway at about $1 a month even if the key leaks;
+  lower `quota_per_day` (`api_quota_per_day` in dev) to cap it further.
+  Unknown paths and requests without a key are rejected by API Gateway, so
+  they cost no Lambda time. A REST API costs $3.50 per million requests
+  against an HTTP API's $1, the price of testing auth on LocalStack
+  ([ADR 0005](adr/0005-rest-api-with-api-key.md)).
 - The DynamoDB table has no point-in-time recovery: bars can be rebuilt by
   replaying `raw/`, and TTL keeps the table at about 30k items.
 - The bootstrap module creates an AWS Budget with an email alert at a

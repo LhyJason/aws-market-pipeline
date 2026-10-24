@@ -39,8 +39,16 @@ servers to patch.
    projection, so Athena sees new hours without a crawler. Three saved queries
    (daily VWAP, largest 1-minute moves, gaps in minutes) run in an Athena
    workgroup with a 1 GiB per-query scan limit.
-7. **Serve** (phase 4). API Gateway (HTTP API) fronts a FastAPI app on Lambda
-   that reads DynamoDB for latest price, recent bars, and anomaly flags.
+7. **Serve** (phase 4). An API Gateway REST API fronts a FastAPI app on
+   Lambda (through Mangum) that reads DynamoDB only: `GET /prices/{symbol}`
+   is one `GetItem` on `LATEST`, `GET /bars/{symbol}` one `Query` for the
+   newest bars in a time range plus one for the rolling window before them,
+   and `GET /health` reads nothing. Rolling statistics and anomaly flags are
+   computed per request rather than stored, because a late tick can still
+   move a bar's close: each bar's 1-minute return gets a z-score against the
+   preceding window's returns, `|z| >= 3` is a `spike`, and a missing minute
+   is a `gap`. The data routes need an API key, metered by a usage plan
+   (10 req/s, 10,000 a day); see [ADR 0005](adr/0005-rest-api-with-api-key.md).
 
 ## Record schema (v1)
 
@@ -91,18 +99,31 @@ state keys in the same state bucket. Resource names are prefixed
 `<project>-<env>` so both can live in one account. Prod is a placeholder until
 phase 5.
 
-`infra/envs/local` applies the ingest, storage and processing modules to
+`infra/envs/local` applies the ingest, storage, processing and api modules to
 LocalStack 4.14 in Docker for $0. Glue and Athena are not in LocalStack's free
 edition, so local leaves the analytics module out, and
 `scripts/query_lake.py` runs the same saved queries with DuckDB over the
-Parquet files instead. The processor bundles DuckDB, a native wheel, so
-`scripts/build_lambda.py` builds its package for the architecture it runs on:
-arm64 on AWS, the Docker host's (usually x86_64) on LocalStack.
+Parquet files instead. The processor bundles DuckDB and the API pydantic-core,
+both native wheels, so `scripts/build_lambda.py` builds their packages for
+the architecture they run on: arm64 on AWS, the Docker host's (usually
+x86_64) on LocalStack. LocalStack enforces API keys, so
+`tests/integration` checks auth and the whole path from producer to API
+locally; it does not enforce IAM, API Gateway throttling or quotas, which
+only a run on AWS can check. envs/local pins the AWS provider below 6.58,
+whose REST API waiter needs a status LocalStack does not report.
 
 ## Security posture
 
 - One IAM role per Lambda or Firehose stream, scoped to the exact stream,
-  table, or bucket prefix it uses. No wildcard resources.
+  table, or bucket prefix it uses. No wildcard resources, with one
+  exception: API Gateway's account-wide logging role uses the AWS-managed
+  `AmazonAPIGatewayPushToCloudWatchLogs` policy. The API role can only
+  `GetItem` and `Query` the market table.
+- The API's data routes require an API key; API Gateway rejects requests
+  without one, and unknown paths, before Lambda runs. A stage-wide throttle
+  and the usage plan's quota bound what one caller can do. API keys meter
+  callers rather than strongly authenticate them; a Cognito authorizer is
+  the upgrade path.
 - Kinesis encrypted at rest with the AWS-managed KMS key, the lake bucket
   with SSE-S3; the lake bucket denies non-TLS requests and blocks public access.
 - Terraform state bucket: versioned, encrypted, public access blocked.
