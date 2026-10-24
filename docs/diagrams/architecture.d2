@@ -1,0 +1,119 @@
+# Source of docs/architecture.svg. Render it with `make diagram` (D2 0.9.0);
+# CI renders it again and fails if the committed SVG differs.
+
+vars: {
+  d2-config: {
+    layout-engine: dagre
+    theme-id: 0
+    dark-theme-id: 200
+    pad: 20
+  }
+}
+
+direction: down
+
+classes: {
+  # An AWS service: its icon, with the label underneath.
+  svc: {
+    shape: image
+    width: 56
+    height: 56
+  }
+  box: {
+    shape: rectangle
+    width: 150
+    height: 52
+  }
+  group: {
+    shape: rectangle
+    style.font-size: 18
+    style.bold: true
+  }
+}
+
+feed: Price feed\nBinance US {
+  shape: cloud
+  width: 120
+  height: 70
+}
+client: API client {
+  shape: person
+  width: 50
+  height: 60
+}
+github: GitHub Actions\nOIDC, no stored keys {
+  icon: https://icons.terrastruct.com/dev%2Fgithub.svg
+  class: svc
+}
+
+aws: 'AWS: dev and prod, or LocalStack for $0' {
+  class: group
+
+  schedule: EventBridge\nevery minute {
+    icon: https://icons.terrastruct.com/aws%2FApplication%20Integration%2FAmazon-EventBridge.svg
+    class: svc
+  }
+  producer: Lambda\nproducer {
+    icon: https://icons.terrastruct.com/aws%2FCompute%2FAWS-Lambda.svg
+    class: svc
+  }
+  stream: Kinesis\nData Stream {
+    icon: https://icons.terrastruct.com/aws%2FAnalytics%2FAmazon-Kinesis-Data-Streams.svg
+    class: svc
+  }
+  firehose: Kinesis\nFirehose {
+    icon: https://icons.terrastruct.com/aws%2FAnalytics%2FAmazon-Kinesis-Data-Firehose.svg
+    class: svc
+  }
+  processor: Lambda processor\n1-min bars, idempotent {
+    icon: https://icons.terrastruct.com/aws%2FCompute%2FAWS-Lambda.svg
+    class: svc
+  }
+  dlq: SQS DLQ\nfailed batches {
+    icon: https://icons.terrastruct.com/aws%2FApplication%20Integration%2FAmazon-Simple-Queue-Service-SQS.svg
+    class: svc
+  }
+  table: DynamoDB\nlatest + bars {
+    icon: https://icons.terrastruct.com/aws%2FDatabase%2FAmazon-DynamoDB.svg
+    class: svc
+  }
+  lake: S3 data lake {
+    class: group
+    icon: https://icons.terrastruct.com/aws%2FStorage%2FAmazon-Simple-Storage-Service-S3.svg
+    raw: raw/ JSON\n30-day replay {class: box}
+    processed: processed/ Parquet\nhour files, rebuilt {class: box}
+  }
+  glue: Glue Catalog\n+ Athena (dev, prod) {
+    icon: https://icons.terrastruct.com/aws%2FAnalytics%2FAmazon-Athena.svg
+    class: svc
+  }
+  apigw: API Gateway\nREST, API key {
+    icon: https://icons.terrastruct.com/aws%2FNetworking%20&%20Content%20Delivery%2FAmazon-API-Gateway.svg
+    class: svc
+  }
+  api: Lambda API\nFastAPI {
+    icon: https://icons.terrastruct.com/aws%2FCompute%2FAWS-Lambda.svg
+    class: svc
+  }
+  observe: CloudWatch logs, TickLagMs, dashboard, alarms · X-Ray traces · SNS alarm email {
+    class: box
+    width: 600
+    height: 40
+  }
+
+  schedule -> producer: invokes
+  producer -> stream: PutRecords
+  stream -> processor: batches ≤ 100
+  stream -> firehose
+  firehose -> lake.raw: every 5 min
+  processor -> table: conditional writes
+  processor -> lake.processed
+  processor -> dlq: {style.stroke-dash: 3}
+  lake.processed -> glue
+  apigw -> api
+  api -> table: GetItem, Query
+}
+
+feed -> aws.producer: HTTPS {style.stroke-dash: 3}
+client -> aws.apigw: HTTPS
+github -> aws: plan / apply {style.stroke-dash: 3}

@@ -1,4 +1,4 @@
-.PHONY: install lint fmt test test-integration test-chaos load load-sweep load-report build tf-fmt tf-validate bootstrap plan apply destroy local-up local-down clean
+.PHONY: install lint fmt test test-integration test-chaos load load-sweep load-report build tf-fmt tf-validate bootstrap plan apply destroy local-up local-down demo diagram clean
 
 PY  ?= python
 ENV ?= dev
@@ -11,6 +11,8 @@ RATE ?= 50
 DURATION ?= 60
 SYMBOLS ?= 5
 RATES ?= 10 50 100 200
+# D2 0.9.0 renders the architecture diagram; CI pins the same version.
+D2 ?= d2
 
 ## ---- Python ---------------------------------------------------------------
 
@@ -80,6 +82,14 @@ local-up:         ## start LocalStack and apply infra/envs/local
 
 local-down:       ## stop LocalStack and drop the local state it no longer matches
 	cd infra/envs/local && docker compose down && rm -f terraform.tfstate terraform.tfstate.backup
+
+demo:             ## the whole pipeline on LocalStack, from build to teardown, timed (scripts/demo.py)
+	$(PY) scripts/demo.py
+
+## ---- Docs -----------------------------------------------------------------
+
+diagram:          ## render docs/diagrams/architecture.d2 to docs/architecture.svg
+	$(D2) docs/diagrams/architecture.d2 docs/architecture.svg
 
 clean:
 	find . -name __pycache__ -type d -prune -exec rm -rf {} +

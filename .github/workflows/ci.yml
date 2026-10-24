@@ -73,6 +73,30 @@ jobs:
           terraform init -input=false
           terraform validate
 
+  diagram:
+    name: diagram is up to date
+    runs-on: ubuntu-latest
+    env:
+      D2_VERSION: v0.9.0
+      D2_SHA256: 5669ddc46b99e942cc96078f4a4e36d5e62103348f4c05179ede27802fdd87a9
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: install D2
+        working-directory: ${{ runner.temp }}
+        run: |
+          curl -fsSLo d2.tar.gz "https://github.com/terrastruct/d2/releases/download/${D2_VERSION}/d2-${D2_VERSION}-linux-amd64.tar.gz"
+          echo "${D2_SHA256}  d2.tar.gz" | sha256sum -c
+          tar -xzf d2.tar.gz
+          echo "$PWD/d2-${D2_VERSION}/bin" >> "$GITHUB_PATH"
+
+      # Renders docs/diagrams/architecture.d2 again (fetching its icons) and
+      # fails if the result differs from the committed SVG.
+      - name: render and compare
+        run: |
+          d2 docs/diagrams/architecture.d2 docs/architecture.svg
+          git diff --exit-code --stat -- docs/architecture.svg
+
   actionlint:
     name: actionlint
     runs-on: ubuntu-latest

@@ -125,7 +125,7 @@ from arrival removes that offset; the raw lag does not.
 ## Unit test coverage
 
 `make test` measures statements and branches of the Lambda code in
-`services/`: 203 tests, **95%** (779 statements, 154 branches). The misses are
+`services/`: 216 tests, **95%** (779 statements, 154 branches). The misses are
 the producer's and API's copies of the JSON log formatter (the processor's
 copy is tested), two of the feed's error branches, and the producer's
 Lambda entry point. The load scripts in `scripts/` are tested too, at 88 to 89%,
