@@ -12,8 +12,13 @@ def pytest_configure(config: pytest.Config) -> None:
 
 
 @pytest.fixture(autouse=True)
-def _aws_credentials(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Fake credentials so boto3 never looks for real ones; moto intercepts the calls."""
+def _aws_credentials(request: pytest.FixtureRequest, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Fake credentials so boto3 never looks for real ones; moto intercepts the calls.
+
+    Integration tests talk to a real endpoint and bring their own.
+    """
+    if request.node.get_closest_marker("integration"):
+        return
     monkeypatch.setenv("AWS_ACCESS_KEY_ID", "testing")
     monkeypatch.setenv("AWS_SECRET_ACCESS_KEY", "testing")
     monkeypatch.setenv("AWS_SECURITY_TOKEN", "testing")

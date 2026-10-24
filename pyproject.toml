@@ -11,9 +11,11 @@ readme = "README.md"
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 pythonpath = ["services/producer/src", "services/processor/src", "services/api/src", "scripts"]
-addopts = "-ra -q --strict-markers"
+# Integration tests are deselected by default (CI, make test); make
+# test-integration selects them with -m integration and RUN_INTEGRATION=1.
+addopts = "-ra -q --strict-markers -m 'not integration'"
 markers = [
-  "integration: hits a deployed AWS environment (skipped in CI by default)",
+  "integration: hits a deployed stack, LocalStack by default (needs RUN_INTEGRATION=1)",
 ]
 filterwarnings = [
   # Mangum 0.22 calls asyncio.get_event_loop() when created; harmless on 3.12.
