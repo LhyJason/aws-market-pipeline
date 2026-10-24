@@ -257,3 +257,6 @@ for an unknown symbol, 503 if DynamoDB fails. More in
 - [x] **5. Hardening**: SNS-notified alarms (producer errors, iterator age, DLQ depth, API 5xx and p95 latency), a CloudWatch dashboard with end-to-end lag (EMF), X-Ray tracing on every Lambda and the API stage, GitHub OIDC plan/deploy roles with named actions and permissions boundaries, a prod environment deployed by manual run, a deploy smoke test, and chaos tests on LocalStack (poison records, a failing symbol to the DLQ, DynamoDB errors as 503, a bad deploy as 502)
 - [x] **6. Portfolio polish**: an architecture diagram drawn as code (D2) and checked in CI, a load generator and log-based report, measured results labelled by source (LocalStack, configuration, estimate), a timed demo script with a recording, and resume notes ([docs/resume.md](docs/resume.md))
 
+## License
+
+[MIT](LICENSE)
