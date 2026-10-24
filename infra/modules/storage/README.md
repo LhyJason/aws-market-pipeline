@@ -9,7 +9,7 @@ the market DynamoDB table the processor writes.
 | `aws_s3_bucket_public_access_block` + bucket policy | all public access blocked, non-TLS requests denied |
 | `aws_s3_bucket_lifecycle_configuration` | expires `raw/` and `errors/` after `raw_expiration_days` (30), `athena-results/` after `athena_results_expiration_days` (7), aborts stale multipart uploads |
 | `aws_kinesis_firehose_delivery_stream` | reads `source_stream_arn`, writes uncompressed JSON lines        |
-| `aws_iam_role` + inline policy   | read on the one stream, write on `raw/*` and `errors/*` only, logs to its own stream |
+| `aws_iam_role` + inline policy   | read on the one stream, write on `raw/*` and `errors/*` only, logs to its own stream; `permissions_boundary` on the role (dev/prod: the env's boundary from bootstrap) |
 | `aws_cloudwatch_log_group`       | delivery errors, explicit retention                                   |
 | `aws_dynamodb_table`             | `<prefix>-market`, on-demand, PK `symbol`, SK `sk`, TTL on `expires_at`; PITR and deletion protection off by default |
 
