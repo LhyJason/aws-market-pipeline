@@ -139,6 +139,12 @@ def stack() -> Stack:
     )
 
 
+@pytest.fixture(scope="session")
+def outputs() -> dict[str, Any]:
+    """Every ``terraform output`` of TF_ENV_DIR, for tests that need more than ``stack``."""
+    return _terraform_outputs(ROOT / os.environ.get("TF_ENV_DIR", "infra/envs/local"))
+
+
 def _wait_for[T](
     probe: Callable[[], T | None], *, timeout_s: float = 120, interval_s: float = 2
 ) -> T:

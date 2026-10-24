@@ -46,6 +46,10 @@ output "athena_workgroup" {
   value = module.analytics.workgroup
 }
 
+output "api_function_name" {
+  value = module.api.function_name
+}
+
 output "api_url" {
   value = module.api.invoke_url
 }

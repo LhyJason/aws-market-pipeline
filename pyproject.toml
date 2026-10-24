@@ -12,10 +12,12 @@ readme = "README.md"
 testpaths = ["tests"]
 pythonpath = ["services/producer/src", "services/processor/src", "services/api/src", "scripts"]
 # Integration tests are deselected by default (CI, make test); make
-# test-integration selects them with -m integration and RUN_INTEGRATION=1.
+# test-integration selects them with -m "integration and not chaos" and
+# RUN_INTEGRATION=1, and make test-chaos the chaos tests with -m chaos.
 addopts = "-ra -q --strict-markers -m 'not integration'"
 markers = [
   "integration: hits a deployed stack, LocalStack by default (needs RUN_INTEGRATION=1)",
+  "chaos: injects failures into a deployed stack and restores it (LocalStack unless ALLOW_CHAOS_ON_AWS=1)",
 ]
 filterwarnings = [
   # Mangum 0.22 calls asyncio.get_event_loop() when created; harmless on 3.12.
