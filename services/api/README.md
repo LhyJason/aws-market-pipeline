@@ -1,7 +1,9 @@
 # api (phase 4)
 
 FastAPI application served from Lambda through Mangum, behind an API Gateway
-REST API (Lambda proxy integration, payload v1). It reads the market table
+REST API (Lambda proxy integration, payload v1) with an API key
+([ADR 0005](../../docs/adr/0005-rest-api-with-api-key.md); Terraform in
+`infra/modules/api`). It reads the market table
 only, with `GetItem` and `Query`, never `Scan`, and never touches the stream.
 
 ```
@@ -118,4 +120,5 @@ FastAPI's `/docs` and `/openapi.json` exist in the app, but API Gateway only
 routes the three paths above.
 
 Tests: `tests/unit/test_api_app.py`, `test_api_store.py`, `test_api_stats.py`,
-`test_api_config.py`.
+`test_api_config.py`; against a deployed stack, `tests/integration`
+(`make test-integration`).

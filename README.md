@@ -5,7 +5,7 @@ Kinesis, stream processing into DynamoDB and an S3 data lake, SQL analytics with
 Athena, and a FastAPI endpoint on API Gateway. Everything is provisioned with
 Terraform and deployed through GitHub Actions using OIDC (no long-lived AWS keys).
 
-> Status: **Phase 3 (processing and analytics)** done; phase 4 next. See [Phases](#phases).
+> Status: **Phase 4 (API)** done; phase 5 next. See [Phases](#phases).
 
 ## Architecture
 
@@ -20,7 +20,7 @@ flowchart LR
     C --> DDB[(DynamoDB<br/>latest + 1-min bars)]
     C --> S3[(S3 data lake<br/>Parquet, symbol/dt/hour)]
     S3 --> GLUE[Glue Catalog] --> ATH[Athena]
-    APIGW[API Gateway] --> API[Lambda<br/>FastAPI]
+    CLIENT([client + API key]) --> APIGW[API Gateway<br/>REST API] --> API[Lambda<br/>FastAPI]
     API --> DDB
     CW[CloudWatch<br/>logs, dashboards, alarms] -.-> P & C & API
 ```
@@ -31,7 +31,7 @@ flowchart LR
 | Storage       | Kinesis Data Firehose, S3 (raw + Parquet), DynamoDB | 2-3 |
 | Processing    | Lambda (Kinesis consumer)                  | 3     |
 | Analytics     | Glue Data Catalog, Athena                  | 3     |
-| API           | API Gateway (HTTP), Lambda + FastAPI       | 4     |
+| API           | API Gateway (REST, API key), Lambda + FastAPI | 4  |
 | Platform      | Terraform, GitHub Actions (OIDC), CloudWatch, X-Ray, Budgets | 1, 5 |
 
 Details: [docs/architecture.md](docs/architecture.md), decisions: [docs/adr](docs/adr),
@@ -48,13 +48,13 @@ cost model: [docs/cost.md](docs/cost.md).
 ├── services/
 │   ├── producer/         # Lambda: price feed -> Kinesis
 │   ├── processor/        # Lambda: Kinesis -> DynamoDB + S3 Parquet
-│   └── api/              # FastAPI on Lambda                   (phase 4)
+│   └── api/              # Lambda: FastAPI over DynamoDB, rolling stats
 ├── analytics/
 │   ├── athena/           # table schema, DDL and saved queries
 │   └── notebooks/
 ├── tests/
 │   ├── unit/             # fast, no AWS (moto for AWS clients)
-│   └── integration/      # against a deployed dev stack        (phase 4)
+│   └── integration/      # end to end against LocalStack (or dev)
 ├── scripts/              # build_lambda.py (Lambda packages), query_lake.py (Athena SQL on DuckDB)
 ├── docs/                 # architecture, ADRs, cost
 └── .github/workflows/    # ci.yml (lint, test, validate), deploy.yml (OIDC + terraform apply)
@@ -63,18 +63,22 @@ cost model: [docs/cost.md](docs/cost.md).
 ## Run it locally for free
 
 `infra/envs/local` applies the same modules to [LocalStack](https://docs.localstack.cloud)
-in Docker: producer, Kinesis, Firehose, the processor, DynamoDB and the S3 lake
-all run on your machine, no AWS account, $0. See
+in Docker: producer, Kinesis, Firehose, the processor, DynamoDB, the S3 lake
+and the API all run on your machine, no AWS account, $0. See
 [infra/envs/local/README.md](infra/envs/local/README.md).
 
 ```bash
 python scripts/build_lambda.py processor --arch x86_64   # processor package with DuckDB
+python scripts/build_lambda.py api --arch x86_64         # API package with pydantic-core
 cd infra/envs/local
 docker compose up -d
 terraform init && terraform apply
 cd ../../..
 python scripts/query_lake.py --localstack                # the Athena queries, on DuckDB
+make test-integration                                    # producer -> ... -> API, end to end
 ```
+
+`make local-up` does the builds, `docker compose up` and `apply` in one go.
 
 ## Quickstart
 
@@ -96,7 +100,7 @@ terraform init && terraform apply
 cd ../..
 
 # 4. Deploy the dev environment
-python scripts/build_lambda.py processor --arch arm64   # or: make build
+make build                                      # processor and API packages for arm64
 cd infra/envs/dev
 cp backend.hcl.example backend.hcl              # bucket name from step 3
 cp terraform.tfvars.example terraform.tfvars
@@ -123,17 +127,56 @@ aws dynamodb query --table-name "$(terraform output -raw market_table)" \
 ```
 
 The saved Athena queries are in the workgroup named by
-`terraform output -raw athena_workgroup`.
+`terraform output -raw athena_workgroup`. The API is at
+`terraform output -raw api_url`; see [API](#api).
 
 Tear down with `terraform destroy` in `infra/envs/dev` when not in use. The
 Kinesis shard is the only always-on cost (see [docs/cost.md](docs/cost.md)).
+
+## API
+
+A REST API on API Gateway in front of a FastAPI Lambda that reads DynamoDB
+only. `/health` is open; the data routes need the `x-api-key` header. One key
+in a usage plan: 10 requests/s (burst 20), 10,000 a day. Why a REST API with
+an API key: [ADR 0005](docs/adr/0005-rest-api-with-api-key.md).
+
+| Route                  | Returns                                                     |
+| ---------------------- | ----------------------------------------------------------- |
+| `GET /health`          | `{"status": "ok", "version": ...}`                          |
+| `GET /prices/{symbol}` | latest tick: `price`, `ts`, `time`, `source`, `age_s`, `stale` |
+| `GET /bars/{symbol}`   | 1-minute bars with `return`, `zscore`, `flags` (`spike`, `gap`), and rolling `stats` |
+
+`/bars` takes `start` and `end` (ISO 8601, default the last hour, at most 7
+days), `limit` (1-1000, default 60, the newest bars in the range) and
+`window` (5-240 bars, default 60). Statistics are computed per request: a
+bar's z-score compares its 1-minute return with the returns of the `window`
+bars before it, and `|z| >= 3` flags a spike.
+
+```bash
+URL=$(terraform -chdir=infra/envs/local output -raw api_url)   # or infra/envs/dev
+KEY=$(terraform -chdir=infra/envs/local output -raw api_key)
+
+curl -s "$URL/health"
+curl -s -H "x-api-key: $KEY" "$URL/prices/BTCUSDT"
+curl -s -H "x-api-key: $KEY" "$URL/bars/BTCUSDT?limit=3&window=30"
+curl -s -H "x-api-key: $KEY" "$URL/bars/ETHUSDT?start=2026-10-23T14:00:00Z&end=2026-10-23T15:00:00Z"
+```
+
+```json
+{"symbol": "BTCUSDT", "price": 81180.01, "ts": 1792799698445,
+ "time": "2026-10-23T23:54:58.445000Z", "source": "binance", "age_s": 2.696, "stale": false}
+```
+
+Errors: 403 without a valid key (from API Gateway), 422 for bad input, 404
+for an unknown symbol, 503 if DynamoDB fails. More in
+[services/api/README.md](services/api/README.md).
 
 ## Phases
 
 - [x] **1. Foundation**: repo skeleton, Terraform remote state, CI (lint, tests, `terraform validate`), budget alarm, producer Lambda to Kinesis
 - [x] **2. Ingest to lake**: raw records landing in S3 via Kinesis Data Firehose (`raw/dt=/hour=`, 30-day expiry)
 - [x] **3. Processing and analytics**: processor Lambda (1-minute bars, idempotent, partial batch responses, SQS DLQ), DynamoDB, Parquet via DuckDB under `processed/`, Glue table with partition projection, Athena saved queries checked with DuckDB in CI
-- [ ] **4. API**: FastAPI on Lambda behind API Gateway, auth, integration tests
+- [x] **4. API**: FastAPI on Lambda (Mangum) behind an API Gateway REST API with an API key, usage-plan throttling and quota, rolling stats and spike/gap flags computed at read time, end-to-end integration tests on LocalStack
 - [ ] **5. Hardening**: OIDC deploys from GitHub, dashboards, alarms, X-Ray, chaos test
 - [ ] **6. Portfolio polish**: diagram, measured numbers (throughput, p95 latency, monthly cost), demo
 
