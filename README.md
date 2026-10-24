@@ -1,11 +1,50 @@
 # aws-market-pipeline
 
-A serverless, real-time market data pipeline on AWS: scheduled ingestion into
-Kinesis, stream processing into DynamoDB and an S3 data lake, SQL analytics with
-Athena, and a FastAPI endpoint on API Gateway. Everything is provisioned with
-Terraform and deployed through GitHub Actions using OIDC (no long-lived AWS keys).
+A serverless, real-time market data pipeline on AWS, built as infrastructure
+as code and tested end to end without an AWS bill. An EventBridge schedule
+fetches live crypto prices into Kinesis. A Lambda builds idempotent 1-minute
+bars in DynamoDB and Parquet in an S3 lake, which Athena queries. A FastAPI
+Lambda behind API Gateway serves the data with rolling statistics.
 
-> Status: **Phase 5 (hardening)** done; phase 6 next. See [Phases](#phases).
+- **Terraform for everything:** 6 modules, and the same modules in `dev`,
+  `prod` and `local` (LocalStack, $0).
+- **At-least-once, exactly-counted processing:** conditional writes, partial
+  batch responses, bisect-on-error and a dead-letter queue. Chaos tests break
+  the stack on purpose and check that each failure stays contained.
+- **Least-privilege CI/CD:** GitHub Actions with OIDC (no stored AWS keys),
+  per-environment deploy roles under permissions boundaries, and prod only by
+  a manual run.
+- **Observable:** structured logs, an end-to-end lag metric, 5 SNS alarms, a
+  dashboard and X-Ray tracing.
+- **Measured honestly:** a load generator and a log-based report, with every
+  number labelled by where it was measured.
+
+**Try it in about 5 minutes for $0:** `make install && make demo` (see
+[Run it locally](#run-it-locally-for-0)).
+
+> Status: all six phases done ([Phases](#phases)). Nothing has been applied to
+> a real AWS account: the results below come from LocalStack, configuration
+> or price lists, and each one says which ([ADR 0009](docs/adr/0009-measure-on-localstack-only.md)).
+
+## Results
+
+| Metric | Value | Source |
+| --- | --- | --- |
+| Events per day at the default schedule | 4,320 ticks (3 symbols, one run a minute) | configuration |
+| p95 tick-to-DynamoDB lag, default schedule | 1,023 ms (p50 422 ms, 37 batches) | LocalStack |
+| p95 lag under load, 10 to 70 ticks/s | 1.4 to 1.7 s | LocalStack load test |
+| Processor throughput, 1 shard, 100-record batches | about 70 ticks/s before lag grows | LocalStack load test |
+| Ticks lost or counted twice under load | 0 of 25,800 (5 runs, 10 to 200 ticks/s) | LocalStack load test |
+| Monthly cost, dev | about $13 (about $17 at list price) | estimate from AWS prices, not measured |
+| Unit tests | 216 tests, 95% statement and branch coverage of `services/` | `pytest-cov`, in CI |
+| Fresh clone to a finished demo | about 4 minutes, with Docker images cached | timed on a Windows laptop |
+
+Lag is measured from when the producer read the price to when the bars
+landed in DynamoDB; under load, from when the generator sent the tick. The
+LocalStack figures describe one laptop running everything: they say nothing
+about AWS latency, limits or cost. How they were measured, and what they can
+and cannot show: [docs/load-test.md](docs/load-test.md). Cost model:
+[docs/cost.md](docs/cost.md).
 
 ## Architecture
 
@@ -33,7 +72,7 @@ cost model: [docs/cost.md](docs/cost.md).
 .
 ├── infra/
 │   ├── bootstrap/        # one-time: state bucket, cost budget, GitHub OIDC roles + permissions boundaries
-│   ├── modules/          # reusable Terraform modules (ingest, storage, processing, api, observability)
+│   ├── modules/          # reusable Terraform modules (ingest, storage, processing, analytics, api, observability)
 │   └── envs/{local,dev,prod}/  # per-environment root modules (local = LocalStack)
 ├── services/
 │   ├── producer/         # Lambda: price feed -> Kinesis
@@ -45,57 +84,70 @@ cost model: [docs/cost.md](docs/cost.md).
 ├── tests/
 │   ├── unit/             # fast, no AWS (moto for AWS clients)
 │   └── integration/      # end to end and chaos tests against LocalStack (or dev)
-├── scripts/              # build_lambda.py (Lambda packages), query_lake.py (Athena SQL on DuckDB)
-├── docs/                 # architecture, ADRs, cost
+├── scripts/              # Lambda packaging, DuckDB queries, load test and report, demo
+├── docs/                 # architecture (D2 diagram), ADRs, cost, load test, demo recording, resume notes
 └── .github/             # ci.yml (lint, test, validate, actionlint), deploy.yml (OIDC plan/apply), composite actions
 ```
 
-## Run it locally for free
+## Run it locally for $0
 
 `infra/envs/local` applies the same modules to [LocalStack](https://docs.localstack.cloud)
-in Docker: producer, Kinesis, Firehose, the processor, DynamoDB, the S3 lake
-and the API all run on your machine, no AWS account, $0. See
-[infra/envs/local/README.md](infra/envs/local/README.md).
+4.14 in Docker. The producer, Kinesis, Firehose, the processor, DynamoDB, the
+S3 lake and the API all run on your machine, with no AWS account. Glue and
+Athena are not in LocalStack's free edition; their saved queries run on
+DuckDB instead. Details: [infra/envs/local/README.md](infra/envs/local/README.md).
+
+Prerequisites: Docker (running), Terraform >= 1.10, Python 3.12. On Windows,
+clone to a short path such as `C:\src`: botocore's data files are deep
+enough to hit the 260-character path limit under a long one.
 
 ```bash
-python scripts/build_lambda.py processor --arch x86_64   # processor package with DuckDB
-python scripts/build_lambda.py api --arch x86_64         # API package with pydantic-core
-cd infra/envs/local
-docker compose up -d
-terraform init && terraform apply
-cd ../../..
-python scripts/query_lake.py --localstack                # the Athena queries, on DuckDB
-make test-integration                                    # producer -> ... -> API, end to end
-make test-chaos                                          # inject failures, check the stack copes
-make load RATE=50 DURATION=60                            # load test: throughput and lag percentiles
+git clone https://github.com/LhyJason/aws-market-pipeline.git && cd aws-market-pipeline
+python -m venv .venv && source .venv/bin/activate   # Windows: .venv\Scripts\activate
+make install                                        # or: pip install -r requirements-dev.txt
+make demo                                           # or: python scripts/demo.py
 ```
-
-`make local-up` does the builds, `docker compose up` and `apply` in one go.
 
 ### Demo
 
-`make demo` (or `python scripts/demo.py`) runs all of it as a guided tour and
-times each step: build, start LocalStack, apply, put a live tick through to
-the API, a 20-second load test, two chaos tests, the Athena queries on
-DuckDB, then teardown (`--keep` leaves the stack up).
+`scripts/demo.py` runs the whole pipeline as a guided tour and times each
+step:
 
-![The demo: 9 steps from building the Lambda packages to teardown, about three minutes](docs/demo/demo.gif)
+1. Build the Lambda packages and start LocalStack.
+2. Apply the stack.
+3. Put a live tick through to the API.
+4. Run a 20-second load test.
+5. Break the stack twice (poison records, a bad deploy) and watch it recover.
+6. Run the Athena query on DuckDB.
+7. Tear down. `--keep` leaves the stack up.
 
-From a fresh clone on a Windows laptop it took 4 minutes: 53 s for the
-virtualenv and `pip install`, then 3 minutes for the demo, two of them in
+![The demo: nine timed steps from building the Lambda packages to teardown, about two and a half minutes](docs/demo/demo.gif)
+
+From a fresh clone on a Windows laptop it took about 4 minutes. The
+virtualenv and `pip install` took 53 s and the demo 3 minutes, two of them in
 `terraform apply`. That was with the Docker images already pulled; the first
 run also downloads `localstack/localstack:4.14.0` (1.8 GB unpacked) and the
-Lambda Python 3.12 image (0.75 GB) at the first invocation. On Windows, clone
-to a short path (for example `C:\src`): botocore's data files are deep enough
-to hit the 260-character path limit under a long one.
-The recording is [docs/demo/demo.cast](docs/demo/demo.cast) (asciicast v2,
-from `scripts/demo.py --record`), turned into a GIF with
-[agg](https://github.com/asciinema/agg).
-The load test and what its LocalStack numbers mean: [docs/load-test.md](docs/load-test.md).
+Lambda Python 3.12 image (0.75 GB). The GIF is
+[docs/demo/demo.cast](docs/demo/demo.cast), a recording of a real run made by
+`scripts/demo.py --record`, through [agg](https://github.com/asciinema/agg).
 
-## Quickstart
+### Step by step
 
-Prerequisites: Python 3.12, Terraform >= 1.10, an AWS account with the CLI configured.
+```bash
+make local-up                                            # build, docker compose up, terraform apply
+python scripts/query_lake.py --localstack                # the Athena queries, on DuckDB
+make test-integration                                    # producer -> ... -> API, end to end
+make test-chaos                                          # inject failures, check the stack copes
+make load RATE=50 DURATION=60                            # load test: throughput, lag percentiles
+make local-down                                          # stop LocalStack, drop its state
+```
+
+## Deploy to AWS
+
+This costs money: about $13 to $17 a month for dev while it is up, mostly
+the Kinesis shard ([docs/cost.md](docs/cost.md)). It has not been run against
+a real account yet. Prerequisites: Python 3.12, Terraform >= 1.10, and an AWS
+account with the CLI configured.
 
 ```bash
 # 1. Python tooling
@@ -112,7 +164,7 @@ cp terraform.tfvars.example terraform.tfvars   # set a globally unique bucket na
 terraform init && terraform apply
 cd ../..
 
-# 4. Deploy the dev environment
+# 4. Deploy the dev environment (billed from here on)
 make build                                      # processor and API packages for arm64
 cd infra/envs/dev
 cp backend.hcl.example backend.hcl              # bucket name from step 3
@@ -203,15 +255,5 @@ for an unknown symbol, 503 if DynamoDB fails. More in
 - [x] **3. Processing and analytics**: processor Lambda (1-minute bars, idempotent, partial batch responses, SQS DLQ), DynamoDB, Parquet via DuckDB under `processed/`, Glue table with partition projection, Athena saved queries checked with DuckDB in CI
 - [x] **4. API**: FastAPI on Lambda (Mangum) behind an API Gateway REST API with an API key, usage-plan throttling and quota, rolling stats and spike/gap flags computed at read time, end-to-end integration tests on LocalStack
 - [x] **5. Hardening**: SNS-notified alarms (producer errors, iterator age, DLQ depth, API 5xx and p95 latency), a CloudWatch dashboard with end-to-end lag (EMF), X-Ray tracing on every Lambda and the API stage, GitHub OIDC plan/deploy roles with named actions and permissions boundaries, a prod environment deployed by manual run, a deploy smoke test, and chaos tests on LocalStack (poison records, a failing symbol to the DLQ, DynamoDB errors as 503, a bad deploy as 502)
-- [ ] **6. Portfolio polish**: diagram, measured numbers (throughput, p95 latency, monthly cost), demo
+- [x] **6. Portfolio polish**: an architecture diagram drawn as code (D2) and checked in CI, a load generator and log-based report, measured results labelled by source (LocalStack, configuration, estimate), a timed demo script with a recording, and resume notes ([docs/resume.md](docs/resume.md))
 
-## Results
-
-Filled in at phase 6.
-
-| Metric                         | Value |
-| ------------------------------ | ----- |
-| Events per day                 | TBD   |
-| p95 feed-to-DynamoDB latency   | TBD   |
-| Monthly cost (dev)             | TBD   |
-| Unit test coverage             | TBD   |
