@@ -184,6 +184,18 @@ def test_wait_landed(market_table):
     assert load_test.wait_landed(market_table, ["A"], 6, timeout_s=0) == (5, None)
 
 
+def test_wait_landed_keeps_waiting_while_the_backlog_drains(monkeypatch):
+    # Ten seconds a poll against a 15 s timeout: a count that keeps growing
+    # outlasts it, and one that stalls gives up two polls later.
+    clock = iter(x * 10.0 for x in range(100))
+    monkeypatch.setattr(load_test.time, "monotonic", lambda: next(clock))
+    monkeypatch.setattr(load_test.time, "sleep", lambda _: None)
+    counts = iter([10, 20, 30, 40, 40, 40, 40])
+    monkeypatch.setattr(load_test, "landed_ticks", lambda table, symbol: next(counts))
+    assert load_test.wait_landed(None, ["A"], 50, timeout_s=15) == (40, None)
+    assert next(counts) == 40  # gave up on the sixth poll, not the second
+
+
 def test_wait_logged_waits_until_the_logs_account_for_every_landed_tick(monkeypatch):
     run = load_report.Run(
         run_id="R",

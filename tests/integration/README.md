@@ -58,7 +58,12 @@ RUN_INTEGRATION=1 TF_ENV_DIR=infra/envs/dev pytest -m integration tests/integrat
 | `SYMBOL`            | `BTCUSDT`                                                  |
 | `TERRAFORM`         | `terraform` on PATH                                        |
 
-Against AWS the tests use boto3's usual credential chain.
+Against AWS the tests use boto3's usual credential chain. A new API key is
+refused (403) for about a minute after `terraform apply`, so the `stack`
+fixture first waits until API Gateway accepts it.
+
+On 2026-10-25 all 19 integration tests and the 4 chaos tests passed against
+dev on AWS ([ADR 0011](../../docs/adr/0011-one-capped-aws-run.md)).
 
 ## What they cannot check on LocalStack
 
@@ -80,8 +85,8 @@ days. About 35 seconds on LocalStack.
 | --- | --- | --- |
 | **Poison records** on the stream: bytes that aren't UTF-8, a JSON array, a tick with no price, a negative price, an invalid symbol, then one good tick | The good tick reaches `LATEST`. Each poison record's sequence number appears in a `dropping malformed record` log line. None of them reaches the DLQ, since retrying can't fix them | The `malformed` count in the `processed batch` log line (Logs Insights) |
 | **A symbol that always fails:** a corrupt `BAR#` item (no attributes) at the minute of a test tick, so merging into it raises | A good symbol in the same batch lands at once. The failing batch is retried, bisected and sent to the DLQ with `condition = RetryAttemptsExhausted` and its sequence range. A tick put afterwards lands, so the shard is unblocked. The bad symbol never gets a `LATEST` | The `-processor-dlq` alarm (DLQ depth > 0), and `-processor-iterator-age` if the retries take long |
-| **DynamoDB errors behind the API:** the API Lambda's `TABLE_NAME` points at a table that doesn't exist | `/prices` and `/bars` return **503** `{"detail": "market data is temporarily unavailable"}` instead of crashing, `/health` stays 200, and `/prices` recovers once `TABLE_NAME` is restored | The `-api-5xx` alarm |
-| **A bad deploy:** the API handler set to `api.app.missing` | API Gateway returns **502** on every route until the handler is restored, then `/prices` is 200 again | The smoke test in `deploy.yml` fails the dev deploy before prod can follow, then the `-api-5xx` alarm |
+| **DynamoDB errors behind the API:** the API Lambda's `TABLE_NAME` points at a table that doesn't exist | `/prices` and `/bars` return **503** `{"detail": "market data is temporarily unavailable"}` instead of crashing, `/health` stays 200, and `/prices` recovers once `TABLE_NAME` is restored. Five 503s, the `-api-5xx` alarm's threshold | The `-api-5xx` alarm |
+| **A bad deploy:** the API handler set to `api.app.missing` | API Gateway returns **502** on every route until the handler is restored, then `/prices` is 200 again. Five 502s, the alarm's threshold | The smoke test in `deploy.yml` fails the dev deploy before prod can follow, then the `-api-5xx` alarm |
 
 Throttling isn't injected live: LocalStack only simulates it with
 `DYNAMODB_ERROR_PROBABILITY` set when the container starts, which would fail
@@ -107,6 +112,22 @@ each failure. On LocalStack they cannot show that anyone is told about it:
   which is what the iterator-age alarm is for.
 - **IAM.** LocalStack doesn't enforce it, so the tests can't show that the
   processor role may send to the DLQ. Only a real failure on AWS can.
+
+### What the AWS run showed (2026-10-25)
+
+- **All 4 passed** in 83 s, against 35 s on LocalStack. The DLQ test took
+  18 s, so AWS's retries backed off but didn't hold the shard long.
+- **IAM is enough:** the processor role, under the dev boundary, sent the
+  failed batch to the DLQ.
+- **X-Ray** recorded the 502s and 503s as faults and errors.
+- **No alarm fired.** The two API tests then sent 4 5xx responses between
+  them, under the `-api-5xx` threshold of 5; each now sends 5 on its own,
+  which should trip it (not re-run on AWS since). The
+  DLQ test reads and deletes its message within seconds, before SQS's
+  metric (reported every few minutes) sees it, so the `-processor-dlq` alarm
+  can't fire during the test; leaving the message would keep dev in ALARM
+  until someone drains it. The iterator-age alarm needs five minutes over
+  300 s: the 800 ticks/s load run reached 383 s, but for three minutes.
 
 To run them against dev on AWS (billed, and they briefly break the dev API):
 

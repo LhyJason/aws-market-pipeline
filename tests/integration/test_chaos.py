@@ -34,6 +34,9 @@ pytestmark = [pytest.mark.integration, pytest.mark.chaos]
 RUN = uuid.uuid4().hex[:8].upper()
 MINUTE_MS = 60_000
 DLQ_TIMEOUT_S = 300  # LocalStack retries at once; AWS backs off between retries
+# The API 5xx alarm fires on 5 in five minutes (api_5xx_threshold); each API
+# test sends that many on its own, so on AWS either one trips it.
+ALARM_5XX = 5
 
 
 @pytest.fixture(scope="module", autouse=True)
@@ -243,12 +246,12 @@ def test_the_api_returns_503_when_dynamodb_fails(stack, outputs, wait_for):
     missing = {**variables, "TABLE_NAME": f"{outputs['market_table']}-missing-{RUN.lower()}"}
 
     with reconfigured(stack, function, Environment={"Variables": missing}):
-        prices = stack.get(f"/prices/{stack.symbol}")
+        prices = [stack.get(f"/prices/{stack.symbol}") for _ in range(ALARM_5XX - 1)]
         bars = stack.get(f"/bars/{stack.symbol}")
         health = stack.get("/health", key=None)
 
-    assert prices.status == 503
-    assert prices.body == {"detail": "market data is temporarily unavailable"}
+    assert [response.status for response in prices] == [503] * (ALARM_5XX - 1)
+    assert prices[0].body == {"detail": "market data is temporarily unavailable"}
     assert bars.status == 503
     assert health.status == 200  # reads nothing, so it stays up
     wait_for(recovered(stack), timeout_s=60)
@@ -256,11 +259,11 @@ def test_the_api_returns_503_when_dynamodb_fails(stack, outputs, wait_for):
 
 def test_a_bad_deploy_is_a_502_until_rolled_back(stack, outputs, wait_for):
     with reconfigured(stack, outputs["api_function_name"], Handler="api.app.missing"):
-        prices = stack.get(f"/prices/{stack.symbol}")
+        prices = [stack.get(f"/prices/{stack.symbol}") for _ in range(ALARM_5XX - 1)]
         health = stack.get("/health", key=None)
 
     # API Gateway answers for the broken Lambda; the deploy workflow's smoke
     # test fails on exactly this, and on AWS the API 5xx alarm fires.
-    assert prices.status == 502
+    assert [response.status for response in prices] == [502] * (ALARM_5XX - 1)
     assert health.status == 502
     wait_for(recovered(stack), timeout_s=60)

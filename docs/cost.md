@@ -6,13 +6,12 @@ list price below, but CloudWatch's and X-Ray's always-free allowances cover it
 at this size. Re-check against the AWS pricing pages
 before quoting numbers on a resume.
 
-**Nothing in this table has been measured on AWS.** The project has not been
-applied to a real account ([ADR 0009](adr/0009-measure-on-localstack-only.md)),
-so the Measured column is empty (—) except where a LocalStack run says
-something about a cost driver, and those cells are marked *LocalStack*.
-LocalStack bills nothing, so it can only check usage, never price. A capped
-run on AWS (about $0.75, priced in ADR 0009) would fill the rest from Cost
-Explorer.
+**The monthly figures are estimates, not measurements.** Dev has run on AWS
+once, for 56 minutes ([ADR 0011](adr/0011-one-capped-aws-run.md); see
+[The capped AWS run](#the-capped-aws-run) below), which is too short to
+measure a month. The Measured column says what a run showed about a cost
+driver and where: *AWS* for that run, *LocalStack* for the local ones.
+LocalStack bills nothing, so it can only check usage, never price.
 
 | Component                         | Driver                              | Estimate / month | Measured |
 | --------------------------------- | ----------------------------------- | ---------------- | -------- |
@@ -20,7 +19,7 @@ Explorer.
 | Kinesis PUT payload units         | ~130k records/month                 | < $0.01          | — |
 | Lambda (producer)                 | 43k invocations, ~200 ms, 256 MB    | free tier        | — |
 | Kinesis Data Firehose (phase 2)   | $0.029/GB, each record rounded up to 5 KB: ~0.65 GB billed | ~$0.02 | — |
-| Lambda (processor, phase 3)       | 43k invocations, ~400 ms, 512 MB (~9k GB-s) | free tier | ~330 ms per invocation at 512 MB, p50 over 45 to 122 batches a run (*LocalStack*, x86_64) |
+| Lambda (processor, phase 3)       | 43k invocations, ~400 ms, 512 MB (~9k GB-s) | free tier | 740 to 950 ms per invocation at 512 MB, p50 per load run; 163 MB used at most (*AWS*, arm64). ~330 ms (*LocalStack*, x86_64). At ~0.8 s, still ~17k GB-s: free tier |
 | DynamoDB (phase 3)                | on demand: ~260k writes, ~800k strongly consistent reads; ~30k items | ~$0.30 | — |
 | S3 raw/ (phase 2)                 | ~8.6k PUTs, ~10 MB held (30-day expiry) | < $0.05      | — |
 | S3 processed/ (phase 3)           | ~130k PUTs (one per symbol-hour per batch), ~5 MB/month added | ~$0.65 | — |
@@ -37,8 +36,22 @@ Explorer.
 | X-Ray (phase 5)                   | ~86k producer and processor traces a month plus API requests; Lambda traces nearly every invocation at this rate. $5 per million after 100k free | $0 (up to ~$1.45 at the API's full quota) | — |
 | SNS alarm topic (phase 5)         | email; first 1,000 notifications free | $0             | — |
 | GitHub OIDC roles, boundaries (phase 5) | IAM is free                   | $0               | — |
-| **Total**                         | list price                          | **~$17**         | — (no AWS run) |
-| **Total with the always-free tier** | alarms, dashboard, metric and traces within their free allowances | **~$13** | — (no AWS run) |
+| **Total**                         | list price                          | **~$17**         | — (one 56-minute run, below) |
+| **Total with the always-free tier** | alarms, dashboard, metric and traces within their free allowances | **~$13** | — (one 56-minute run, below) |
+
+## The capped AWS run
+
+On 2026-10-25 dev was applied to AWS, load-tested with 98,550 ticks in 8
+runs, chaos-tested and destroyed, 56 minutes from the first resource to the
+last ([ADR 0011](adr/0011-one-capped-aws-run.md)). A $5 AWS Budget guarded it.
+
+| | Cost |
+| --- | --- |
+| Estimate at list price | about $0.10: one shard-hour ($0.015), ~0.5 GB of Firehose ingestion after rounding ($0.015), ~5.5k S3 PUTs for `processed/` ($0.03), DynamoDB writes, logs and the rest at a cent or less each; Lambda and X-Ray within their free allowances |
+| Measured | pending: AWS reports charges about a day late. The account's credits cover it either way |
+
+The ADR 0009 estimate of about $0.75 assumed a 20-minute load test of about
+228k ticks; this run sent less than half that.
 
 ## Keeping it cheap
 

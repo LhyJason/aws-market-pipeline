@@ -255,7 +255,7 @@ resource "aws_iam_role" "apigateway_logs" {
 
   name                 = "${var.name_prefix}-apigateway-logs"
   assume_role_policy   = data.aws_iam_policy_document.apigateway_assume.json
-  permissions_boundary = var.permissions_boundary
+  permissions_boundary = var.logging_role_permissions_boundary
   tags                 = var.tags
 }
 

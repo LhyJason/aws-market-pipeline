@@ -314,8 +314,8 @@ locals {
 # ---- Workload permissions boundaries -----------------------------------------
 
 # The most any role in <project>-<env> may do: the union of what the producer,
-# processor, API, Firehose and API Gateway logging roles need. Each role's own
-# policy narrows it further.
+# processor, API and Firehose roles need. Each role's own policy narrows it
+# further. API Gateway's logging role has a boundary of its own (below).
 data "aws_iam_policy_document" "boundary" {
   for_each = local.envs
 
@@ -323,24 +323,6 @@ data "aws_iam_policy_document" "boundary" {
     sid       = "LambdaAndFirehoseLogs"
     actions   = ["logs:CreateLogStream", "logs:PutLogEvents"]
     resources = [for group in ["/aws/lambda", "/aws/kinesisfirehose"] : "${local.arn}:logs:${local.region}:${local.account}:log-group:${group}/${each.value.prefix}-*"]
-  }
-
-  # API Gateway's logging role is one per account, shared by every
-  # environment's API, so it may write to any of the project's API log groups.
-  statement {
-    sid = "ApiGatewayLogs"
-    actions = [
-      "logs:CreateLogGroup",
-      "logs:CreateLogStream",
-      "logs:DescribeLogStreams",
-      "logs:FilterLogEvents",
-      "logs:GetLogEvents",
-      "logs:PutLogEvents",
-    ]
-    resources = [
-      "${local.arn}:logs:${local.region}:${local.account}:log-group:/aws/apigateway/${var.project}-*",
-      "${local.arn}:logs:${local.region}:${local.account}:log-group:API-Gateway-Execution-Logs_*",
-    ]
   }
 
   statement {
@@ -394,6 +376,34 @@ resource "aws_iam_policy" "boundary" {
   name        = "${each.value.prefix}-workload-boundary"
   description = "Permissions boundary for every role in ${each.value.prefix}"
   policy      = data.aws_iam_policy_document.boundary[each.key].json
+}
+
+# API Gateway's account-wide logging role (one per account, in
+# apigateway_account_environment). API Gateway refuses a logging role that may
+# not write to every log group (UpdateAccount: "The role ARN does not have
+# required permissions configured"), so the workload boundary, scoped to the
+# project's log groups, cannot be its ceiling. This boundary allows exactly
+# what the role's AWS-managed policy grants, and no other role may carry it.
+data "aws_iam_policy_document" "apigateway_logs_boundary" {
+  statement {
+    sid = "ApiGatewayLogs"
+    actions = [
+      "logs:CreateLogGroup",
+      "logs:CreateLogStream",
+      "logs:DescribeLogGroups",
+      "logs:DescribeLogStreams",
+      "logs:FilterLogEvents",
+      "logs:GetLogEvents",
+      "logs:PutLogEvents",
+    ]
+    resources = ["*"]
+  }
+}
+
+resource "aws_iam_policy" "apigateway_logs_boundary" {
+  name        = "${local.envs[var.apigateway_account_environment].prefix}-apigateway-logs-boundary"
+  description = "Permissions boundary for API Gateway's account logging role"
+  policy      = data.aws_iam_policy_document.apigateway_logs_boundary.json
 }
 
 # ---- Deploy roles ------------------------------------------------------------
@@ -604,6 +614,24 @@ data "aws_iam_policy_document" "deploy_control" {
     }
   }
 
+  # The logging role carries its own boundary instead of the workload one,
+  # and takes no inline policy.
+  dynamic "statement" {
+    for_each = each.key == var.apigateway_account_environment ? [1] : []
+
+    content {
+      sid       = "CreateApiGatewayLoggingRole"
+      actions   = ["iam:CreateRole", "iam:PutRolePermissionsBoundary"]
+      resources = ["${local.arn}:iam::${local.account}:role/${each.value.prefix}-apigateway-logs"]
+
+      condition {
+        test     = "StringEquals"
+        variable = "iam:PermissionsBoundary"
+        values   = [aws_iam_policy.apigateway_logs_boundary.arn]
+      }
+    }
+  }
+
   # The one AWS-managed policy in the project, on the one role that uses it.
   dynamic "statement" {
     for_each = each.key == var.apigateway_account_environment ? [1] : []
@@ -622,7 +650,7 @@ data "aws_iam_policy_document" "deploy_control" {
       condition {
         test     = "StringEquals"
         variable = "iam:PermissionsBoundary"
-        values   = [each.value.boundary]
+        values   = [aws_iam_policy.apigateway_logs_boundary.arn]
       }
     }
   }

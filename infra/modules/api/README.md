@@ -38,6 +38,12 @@ manages it. The role uses the AWS-managed
 `AmazonAPIGatewayPushToCloudWatchLogs` policy, the one exception to the
 project's no-wildcards rule: it is shared by every REST API in the account.
 
+It takes `logging_role_permissions_boundary`, not the workload
+`permissions_boundary`: API Gateway refuses a logging role whose boundary
+doesn't allow writing to every log group, so dev and prod pass
+`<prefix>-apigateway-logs-boundary` from `infra/bootstrap`, which allows
+exactly the managed policy's actions.
+
 ## Packaging
 
 The API bundles pydantic-core, a native wheel, so the package is built before

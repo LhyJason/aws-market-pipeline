@@ -119,6 +119,12 @@ variable "permissions_boundary" {
   default     = null
 }
 
+variable "logging_role_permissions_boundary" {
+  description = "ARN of the permissions boundary for API Gateway's logging role (infra/bootstrap creates <prefix>-apigateway-logs-boundary); null for none. API Gateway rejects the role under the workload boundary"
+  type        = string
+  default     = null
+}
+
 variable "tags" {
   description = "Extra tags merged with the provider default tags"
   type        = map(string)

@@ -1,6 +1,8 @@
 # ADR 0009: Measure on LocalStack only, and label every number
 
-**Status:** accepted · **Date:** 2026-10-24
+**Status:** accepted, then superseded in part by
+[ADR 0011](0011-one-capped-aws-run.md) (one capped AWS run, 2026-10-25) ·
+**Date:** 2026-10-24
 
 ## Context
 

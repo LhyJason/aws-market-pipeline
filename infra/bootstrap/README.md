@@ -33,6 +33,7 @@ keys are stored in GitHub.
 | `<project>-github-plan` | `pull_request` | Read what `terraform plan` refreshes in every environment, and read (not lock) the state. Fork PRs get no token |
 | `<project>-github-deploy-<env>` | `environment:<env>` (`deploy_subjects`) | Create, update and delete `<project>-<env>-*` resources, and read and write `<env>/*` in the state bucket |
 | `<project>-<env>-workload-boundary` | n/a | Permissions boundary: the most any role in that environment may do |
+| `<project>-dev-apigateway-logs-boundary` | n/a | Permissions boundary for API Gateway's account logging role only: the seven log actions of its AWS-managed policy (`apigateway_account_environment`, dev by default) |
 
 How the roles are kept narrow:
 
@@ -51,7 +52,8 @@ How the roles are kept narrow:
   methods, stages, deployments) are authorized against the API's tags.
 - **No privilege escalation through IAM.** The deploy role can only create a
   role, or change its policies, while that role carries the environment's
-  permissions boundary (`iam:PermissionsBoundary` condition). It cannot
+  permissions boundary (`iam:PermissionsBoundary` condition). The one
+  exception is API Gateway's logging role, below. It cannot
   remove a boundary or edit the boundary policy, and `iam:PassRole` is limited
   to Lambda, Firehose and API Gateway. Every module sets the boundary on its
   roles (`permissions_boundary`, built from the account ID in envs/dev and
@@ -59,12 +61,19 @@ How the roles are kept narrow:
 - **One AWS-managed policy.** Only the `apigateway_account_environment` (dev)
   role may attach `AmazonAPIGatewayPushToCloudWatchLogs`, only to
   `<project>-dev-apigateway-logs`, and may set API Gateway's account-wide
-  logging role. The boundary limits that role to the project's API log groups.
+  logging role. That role carries its own boundary,
+  `<project>-dev-apigateway-logs-boundary`, which allows exactly the managed
+  policy's seven log actions on every log group. API Gateway refuses a
+  logging role that can't write to every log group ("The role ARN does not
+  have required permissions configured"), so the workload boundary can't be
+  its ceiling; the first AWS deploy hit that. The deploy role may set the
+  logging boundary on that one role only, and can't give it an inline
+  policy.
 
 Each deploy role has two customer-managed policies (`-services` and
 `-control`), because together they exceed the 10,240-character inline limit
 and each must stay under the 6,144-character managed limit. Rendered sizes:
-about 4,450 and 5,200 characters for dev.
+about 4,450 and 5,600 characters for dev.
 
 ### Turning deploys on (costs money)
 
@@ -89,9 +98,16 @@ that with that setting, any job on main can assume either deploy role.
 
 ### What has been checked
 
-The deploy roles have never been applied to AWS. `terraform validate` runs in
-CI, and a copy of this configuration was applied to LocalStack 4.14 to render
-every policy and measure it. LocalStack does not enforce IAM, so whether the
-action lists are complete, and whether the API Gateway tag conditions hold,
-only shows on the first real deploy. AWS IAM Access Analyzer's policy checks
-are the next step before that.
+The deploy and plan roles have never been applied to AWS. `terraform
+validate` runs in CI, and a copy of this configuration was applied to
+LocalStack 4.14 to render every policy and measure it. LocalStack does not
+enforce IAM, so whether the action lists are complete, and whether the API
+Gateway tag conditions hold, only shows on the first real deploy through
+them. AWS IAM Access Analyzer's policy checks are the next step before that.
+
+The boundaries have been. On 2026-10-25 the budget and the dev workload
+boundary were applied to AWS, and dev ran under the boundary for an hour
+([ADR 0011](../../docs/adr/0011-one-capped-aws-run.md)): every workload role
+did its job within it. The logging role's own boundary was then applied with
+just that role, and API Gateway accepted it. That run used an IAM user with
+admin rights, not the deploy role, and kept state locally.

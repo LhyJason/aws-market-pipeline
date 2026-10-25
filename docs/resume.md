@@ -1,9 +1,10 @@
 # Resume notes
 
 Bullets about this project that the repository backs up, each with where to
-check it. Every number is labelled by where it was measured. Nothing here was
-measured on AWS ([ADR 0009](adr/0009-measure-on-localstack-only.md)), so
-don't quote a latency, throughput or cost as an AWS figure.
+check it. Every number is labelled by where it was measured: AWS numbers come
+from one capped 56-minute run of dev in us-east-1
+([ADR 0011](adr/0011-one-capped-aws-run.md)), the rest from LocalStack,
+configuration or price lists. Don't quote a LocalStack number as an AWS one.
 
 ## Bullets
 
@@ -13,9 +14,9 @@ don't quote a latency, throughput or cost as an AWS figure.
   to dev, prod and a LocalStack environment that runs the whole stack for $0.
 - **Designed at-least-once stream processing that counts every event exactly
   once**: conditional DynamoDB writes, partial batch responses,
-  bisect-on-error retries and an SQS dead-letter queue. Load tests on
-  LocalStack lost or double-counted 0 of 25,800 ticks, including runs where
-  the processor fell minutes behind.
+  bisect-on-error retries and an SQS dead-letter queue. Load tests on AWS
+  lost or double-counted 0 of 98,550 ticks (0 of 25,800 on LocalStack),
+  including a run where the processor fell more than six minutes behind.
 - **Wrote chaos tests** that inject poison records, a permanently failing
   key, DynamoDB outages and a broken deploy into the running stack, and check
   that each failure is contained, reported (DLQ, 503, 502) and recovered
@@ -32,12 +33,15 @@ don't quote a latency, throughput or cost as an AWS figure.
 - **Instrumented the pipeline** with structured JSON logs, an end-to-end lag
   metric in CloudWatch Embedded Metric Format, 5 SNS-notified alarms, a
   dashboard and X-Ray tracing.
-- **Measured it honestly:**
+- **Measured it on AWS under a $5 cap,** then tore it down:
   - a load generator and a log-based report giving throughput, p50/p95 lag
     and a clock-skew correction;
-  - on LocalStack, the single-shard ceiling (about 70 ticks/s, set by batch
-    size) and p95 lag of about 1.4 to 1.7 s up to that rate;
-  - 216 unit tests at 95% statement and branch coverage.
+  - on AWS, a single-shard ceiling of about 100 records/s, set by batch size
+    (about 70 on LocalStack), and p95 lag of 2 to 3 s up to that rate;
+  - the run found four problems LocalStack couldn't show, among them API
+    Gateway rejecting its logging role under the permissions boundary, fixed
+    with a dedicated boundary and verified on AWS;
+  - 217 unit tests at 95% statement and branch coverage.
 - **Kept a $13 to $17 a month cost model** by component, and showed how to
   pay $0 by running the same Terraform on LocalStack.
 
@@ -47,7 +51,8 @@ Shorter versions, for a one-line entry:
   S3/Parquet, Athena, API Gateway) in Terraform, with OIDC CI/CD, chaos tests,
   and a $0 LocalStack environment.
 - Exactly-once counting on an at-least-once stream (idempotent conditional
-  writes, DLQ); load-tested with zero lost or duplicated events.
+  writes, DLQ); load-tested on AWS with zero lost or duplicated events in
+  98,550.
 
 ## Where each claim is backed
 
@@ -56,22 +61,24 @@ Shorter versions, for a one-line entry:
 | 6 modules, three environments | `infra/modules/*`, `infra/envs/{dev,prod,local}` |
 | $0 local environment | `infra/envs/local/README.md`, `make demo` |
 | Idempotent, exactly-counted processing | `services/processor/src/processor/store.py` (conditional writes, tick sets), `docs/architecture.md#delivery-guarantees` |
-| 0 of 25,800 ticks lost or double-counted | `docs/load-test.md`, results table (LocalStack) |
+| 0 of 98,550 ticks lost or double-counted on AWS (0 of 25,800 on LocalStack) | `docs/load-test.md#results-on-aws`, results table |
+| One capped AWS run and what it found | [ADR 0011](adr/0011-one-capped-aws-run.md), `infra/bootstrap/README.md` (logging-role boundary) |
 | Chaos tests | `tests/integration/test_chaos.py`, `tests/integration/README.md#chaos-tests` |
 | OIDC roles, permissions boundaries, no escalation | `infra/bootstrap/github.tf`, [ADR 0007](adr/0007-github-oidc-deploy-roles.md) |
 | Manual prod gate, smoke test | `.github/workflows/deploy.yml`, [ADR 0008](adr/0008-manual-prod-deploys.md) |
 | API keys, throttling, quota | `infra/modules/api/main.tf`, [ADR 0005](adr/0005-rest-api-with-api-key.md) |
 | Rolling statistics at read time | `services/api/src/api/stats.py` |
 | Observability | `infra/modules/observability`, `services/processor/src/processor/metrics.py`, [ADR 0006](adr/0006-observability-cloudwatch-xray.md) |
-| Throughput ceiling and lag | `docs/load-test.md` (LocalStack, one laptop) |
-| 216 tests, 95% coverage | `make test` (`pytest-cov`, statements and branches of `services/`) |
+| Throughput ceiling and lag | `docs/load-test.md` (AWS, and LocalStack on one laptop) |
+| 217 tests, 95% coverage | `make test` (`pytest-cov`, statements and branches of `services/`) |
 | Cost model | `docs/cost.md` (estimate from AWS prices, not measured) |
 
 ## What not to claim
 
-- **AWS performance:** latency, throughput or cost measured on AWS. None of
-  them were.
-- **Production use:** prod has never been applied, and the stack has never
-  run on a real account.
-- **IAM sufficiency:** that the IAM policies are proven sufficient.
-  LocalStack doesn't enforce IAM, so only a deploy to AWS would show it.
+- **Sustained AWS performance or a measured monthly cost.** The AWS numbers
+  come from one 56-minute run; monthly cost is an estimate.
+- **Production use:** prod has never been applied, and dev ran on AWS for an
+  hour, not continuously.
+- **The CI/CD roles working end to end.** The workload roles and boundaries
+  were proven on AWS, but the run used an admin user: the GitHub plan and
+  deploy roles have never been used.
