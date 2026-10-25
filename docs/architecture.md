@@ -104,7 +104,9 @@ records are logged and dropped, since retrying cannot fix them.
 state keys in the same state bucket. Resource names are prefixed
 `<project>-<env>` so both can live in one account. Prod differs from dev only
 in its prefix and state key, and in leaving the account-wide API Gateway
-logging role to dev. Neither has been applied to AWS.
+logging role to dev. Dev has run on AWS once, for an hour, applied by an
+admin user rather than the deploy role
+([ADR 0011](adr/0011-one-capped-aws-run.md)); prod has never been applied.
 
 Deploys run from GitHub Actions (`deploy.yml`). Pull requests get a read-only
 `terraform plan` of both environments. A push to main applies dev and then
@@ -147,7 +149,10 @@ each failure stays contained, then restores the stack
   (`<project>-<env>-workload-boundary`, from `infra/bootstrap`). The boundary
   is the union of what the workloads need, limited to that environment's
   resources. A role can never do more than the boundary allows, whatever
-  policy is attached to it.
+  policy is attached to it. API Gateway's account logging role is the
+  exception: API Gateway refuses it unless it may write to every log group,
+  so it has a boundary of its own that allows exactly its AWS-managed
+  policy's log actions.
 - **Deploys from GitHub.** They use OIDC federation, so no AWS access keys are
   stored in GitHub ([ADR 0007](adr/0007-github-oidc-deploy-roles.md)):
   - **Plan role:** trusts only this repository's `pull_request` tokens, is

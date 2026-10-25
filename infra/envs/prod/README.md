@@ -40,4 +40,5 @@ terraform apply
 ```
 
 A second stack costs about as much as dev (about $13 a month, mostly the
-Kinesis shard; see `docs/cost.md`). It has not been applied.
+Kinesis shard; see `docs/cost.md`). It has not been applied; dev has run on
+AWS once (`docs/adr/0011-one-capped-aws-run.md`).

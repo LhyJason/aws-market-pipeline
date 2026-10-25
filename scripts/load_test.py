@@ -16,10 +16,10 @@ A run:
    are mixed in,
 2. sends ``rate x duration`` ticks with PutRecords, paced every 50 ms and
    retrying records Kinesis rejects,
-3. reads a few of them back to measure how far the generator's clock is from
-   Kinesis's (``ApproximateArrivalTimestamp``),
-4. waits until DynamoDB's bars count every tick (``tick_count``), which proves
+3. waits until DynamoDB's bars count every tick (``tick_count``), which proves
    nothing was lost or counted twice,
+4. reads a few of them back to measure how far the generator's clock is from
+   Kinesis's (``ApproximateArrivalTimestamp``),
 5. prints the report (scripts/load_report.py), saves the run under
    .build/load/, and deletes the test symbols from DynamoDB and processed/.
 
@@ -173,13 +173,21 @@ def landed_ticks(table: Any, symbol: str) -> int:
 def wait_landed(
     table: Any, symbols: list[str], expected: int, timeout_s: float
 ) -> tuple[int, int | None]:
-    """Poll until the bars hold ``expected`` ticks; return the count and when (None: timed out)."""
+    """Poll until the bars hold ``expected`` ticks; return the count and when (None: timed out).
+
+    The timeout runs from the last time the count grew, so a long backlog that
+    is still draining is waited for and only a stalled one gives up.
+    """
     deadline = time.monotonic() + timeout_s
+    previous = -1
     while True:
         landed = sum(landed_ticks(table, symbol) for symbol in symbols)
         if landed >= expected:
             return landed, now_ms()
-        if time.monotonic() > deadline:
+        if landed > previous:
+            previous = landed
+            deadline = time.monotonic() + timeout_s
+        elif time.monotonic() > deadline:
             return landed, None
         time.sleep(1)
 
@@ -237,7 +245,9 @@ def main(argv: list[str] | None = None) -> None:
     parser.add_argument("--duration", type=float, default=60, help="seconds (default 60)")
     parser.add_argument("--symbols", type=int, default=5, help="symbols to spread over")
     parser.add_argument("--env-dir", default=load_report.DEFAULT_ENV_DIR)
-    parser.add_argument("--drain-timeout", type=float, default=300, help="seconds to wait")
+    parser.add_argument(
+        "--drain-timeout", type=float, default=300, help="seconds with no tick landing to give up"
+    )
     parser.add_argument("--keep-schedule", action="store_true", help="leave the producer on")
     parser.add_argument("--keep-data", action="store_true", help="leave the test symbols")
     args = parser.parse_args(argv)
@@ -265,8 +275,11 @@ def main(argv: list[str] | None = None) -> None:
                 kinesis, stream, TickSource(symbols), args.rate, args.duration
             )
             print(f"sent {stats.sent:,} ticks; waiting for them to land")
-            skew = clock_skew_ms(kinesis, stream, stats.samples)
+            # Landing first: on AWS the read-back took about 20 s, probably as
+            # GetRecords shares the shard's 5 reads a second with the
+            # processor, and that would otherwise count as drain time.
             landed, landed_at = wait_landed(target.table(), symbols, stats.sent, args.drain_timeout)
+            skew = clock_skew_ms(kinesis, stream, stats.samples)
         run = Run(
             run_id=run_id,
             env_dir=args.env_dir,

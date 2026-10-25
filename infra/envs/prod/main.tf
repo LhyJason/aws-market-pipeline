@@ -12,6 +12,9 @@ locals {
   # Created by infra/bootstrap. The deploy role may only create roles that
   # carry it, so every module sets it on its roles.
   permissions_boundary = "arn:${data.aws_partition.current.partition}:iam::${data.aws_caller_identity.current.account_id}:policy/${local.name_prefix}-workload-boundary"
+
+  # API Gateway's logging role has a boundary of its own; see infra/bootstrap.
+  logging_role_permissions_boundary = "arn:${data.aws_partition.current.partition}:iam::${data.aws_caller_identity.current.account_id}:policy/${local.name_prefix}-apigateway-logs-boundary"
 }
 
 module "ingest" {
@@ -73,14 +76,15 @@ module "api" {
   permissions_boundary = local.permissions_boundary
   name_prefix          = local.name_prefix
   # Build first: python scripts/build_lambda.py api --arch arm64
-  package_dir                 = "${path.root}/../../../.build/api-arm64"
-  architecture                = "arm64"
-  table_name                  = module.storage.table_name
-  table_arn                   = module.storage.table_arn
-  symbols                     = var.symbols
-  quota_per_day               = var.api_quota_per_day
-  manage_account_logging_role = var.manage_apigateway_account
-  log_retention_days          = 14
+  package_dir                       = "${path.root}/../../../.build/api-arm64"
+  architecture                      = "arm64"
+  table_name                        = module.storage.table_name
+  table_arn                         = module.storage.table_arn
+  symbols                           = var.symbols
+  quota_per_day                     = var.api_quota_per_day
+  manage_account_logging_role       = var.manage_apigateway_account
+  logging_role_permissions_boundary = local.logging_role_permissions_boundary
+  log_retention_days                = 14
 }
 
 module "observability" {

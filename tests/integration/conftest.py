@@ -128,7 +128,7 @@ def stack() -> Stack:
     else:
         session = boto3.Session(region_name=region)
 
-    return Stack(
+    deployed = Stack(
         api_url=values["API_URL"],
         api_key=values["API_KEY"],
         producer_function=values["PRODUCER_FUNCTION"],
@@ -137,6 +137,10 @@ def stack() -> Stack:
         session=session,
         endpoint_url=endpoint_url,
     )
+    # On AWS a new API key is refused (403, as if it were wrong) for about a
+    # minute after apply, so wait until API Gateway accepts it.
+    _wait_for(lambda: deployed.get(f"/prices/{deployed.symbol}").status != 403 or None)
+    return deployed
 
 
 @pytest.fixture(scope="session")

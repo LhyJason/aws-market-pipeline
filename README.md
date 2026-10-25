@@ -16,35 +16,46 @@ Lambda behind API Gateway serves the data with rolling statistics.
   a manual run.
 - **Observable:** structured logs, an end-to-end lag metric, 5 SNS alarms, a
   dashboard and X-Ray tracing.
-- **Measured honestly:** a load generator and a log-based report, with every
-  number labelled by where it was measured.
+- **Measured honestly:** a load generator and a log-based report, run on
+  LocalStack and once on AWS, with every number labelled by where it was
+  measured.
 
 **Try it in about 5 minutes for $0:** `make install && make demo` (see
 [Run it locally](#run-it-locally-for-0)).
 
-> Status: all six phases done ([Phases](#phases)). Nothing has been applied to
-> a real AWS account: the results below come from LocalStack, configuration
-> or price lists, and each one says which ([ADR 0009](docs/adr/0009-measure-on-localstack-only.md)).
+> Status: all six phases done ([Phases](#phases)). Dev has run on AWS once,
+> for 56 minutes under a $5 cap, and was torn down
+> ([ADR 0011](docs/adr/0011-one-capped-aws-run.md)). The results below come
+> from that run, LocalStack, configuration or price lists, and each one says
+> which.
 
 ## Results
+
+| Metric | AWS, us-east-1 (one capped run) | LocalStack (one laptop) |
+| --- | --- | --- |
+| Ticks lost or counted twice under load | **0 of 98,550** (8 runs, 10 to 800 ticks/s) | 0 of 25,800 (5 runs, 10 to 200 ticks/s) |
+| Processor throughput, 1 shard, 100-record batches | **about 100 records/s** before lag grows | about 70 records/s |
+| p95 lag under load, up to the ceiling | 2.0 to 3.0 s (10 to 100 ticks/s) | 1.4 to 1.7 s (10 to 70 ticks/s) |
+| p95 tick-to-DynamoDB lag, producer alone | 2.69 s (p50 1.18 s, 36 batches) | 1,023 ms (p50 422 ms, 37 batches) |
+| Processor invocation, p50 | 0.74 to 0.95 s (arm64, 512 MB) | about 0.33 s (x86_64, 512 MB) |
+| API latency, p50 | 16 ms in the Lambda (warm); 155 to 168 ms round trip from a laptop | — |
+| Integration and chaos tests | 19 and 4 pass | 19 and 4 pass |
 
 | Metric | Value | Source |
 | --- | --- | --- |
 | Events per day at the default schedule | 4,320 ticks (3 symbols, one run a minute) | configuration |
-| p95 tick-to-DynamoDB lag, default schedule | 1,023 ms (p50 422 ms, 37 batches) | LocalStack |
-| p95 lag under load, 10 to 70 ticks/s | 1.4 to 1.7 s | LocalStack load test |
-| Processor throughput, 1 shard, 100-record batches | about 70 ticks/s before lag grows | LocalStack load test |
-| Ticks lost or counted twice under load | 0 of 25,800 (5 runs, 10 to 200 ticks/s) | LocalStack load test |
 | Monthly cost, dev | about $13 (about $17 at list price) | estimate from AWS prices, not measured |
-| Unit tests | 216 tests, 95% statement and branch coverage of `services/` | `pytest-cov`, in CI |
+| Cost of the AWS run | about $0.10 (56 minutes) | estimate; the bill is pending |
+| Unit tests | 217 tests, 95% statement and branch coverage of `services/` | `pytest-cov`, in CI |
 | Fresh clone to a finished demo | about 4 minutes, with Docker images cached | timed on a Windows laptop |
 
 Lag is measured from when the producer read the price to when the bars
-landed in DynamoDB; under load, from when the generator sent the tick. The
-LocalStack figures describe one laptop running everything: they say nothing
-about AWS latency, limits or cost. How they were measured, and what they can
-and cannot show: [docs/load-test.md](docs/load-test.md). Cost model:
-[docs/cost.md](docs/cost.md).
+landed in DynamoDB; under load, from when Kinesis received the tick. AWS's
+clock was 1.4 to 2.5 s ahead of the laptop's, so the generator's send time
+can't be used there (on LocalStack the two were about 20 ms apart). Above the ceiling nothing is lost, but lag grows until
+the load stops. The LocalStack figures describe one laptop running
+everything. How both were measured, and what each can and cannot show:
+[docs/load-test.md](docs/load-test.md). Cost model: [docs/cost.md](docs/cost.md).
 
 ## Architecture
 
@@ -145,8 +156,10 @@ make local-down                                          # stop LocalStack, drop
 ## Deploy to AWS
 
 This costs money: about $13 to $17 a month for dev while it is up, mostly
-the Kinesis shard ([docs/cost.md](docs/cost.md)). It has not been run against
-a real account yet. Prerequisites: Python 3.12, Terraform >= 1.10, and an AWS
+the Kinesis shard ([docs/cost.md](docs/cost.md)). Dev has been applied to a
+real account once, by an admin user with local state
+([ADR 0011](docs/adr/0011-one-capped-aws-run.md)); the GitHub deploy path
+below hasn't run yet. Prerequisites: Python 3.12, Terraform >= 1.10, and an AWS
 account with the CLI configured.
 
 ```bash
@@ -255,7 +268,7 @@ for an unknown symbol, 503 if DynamoDB fails. More in
 - [x] **3. Processing and analytics**: processor Lambda (1-minute bars, idempotent, partial batch responses, SQS DLQ), DynamoDB, Parquet via DuckDB under `processed/`, Glue table with partition projection, Athena saved queries checked with DuckDB in CI
 - [x] **4. API**: FastAPI on Lambda (Mangum) behind an API Gateway REST API with an API key, usage-plan throttling and quota, rolling stats and spike/gap flags computed at read time, end-to-end integration tests on LocalStack
 - [x] **5. Hardening**: SNS-notified alarms (producer errors, iterator age, DLQ depth, API 5xx and p95 latency), a CloudWatch dashboard with end-to-end lag (EMF), X-Ray tracing on every Lambda and the API stage, GitHub OIDC plan/deploy roles with named actions and permissions boundaries, a prod environment deployed by manual run, a deploy smoke test, and chaos tests on LocalStack (poison records, a failing symbol to the DLQ, DynamoDB errors as 503, a bad deploy as 502)
-- [x] **6. Portfolio polish**: an architecture diagram drawn as code (D2) and checked in CI, a load generator and log-based report, measured results labelled by source (LocalStack, configuration, estimate), a timed demo script with a recording, and resume notes ([docs/resume.md](docs/resume.md))
+- [x] **6. Portfolio polish**: an architecture diagram drawn as code (D2) and checked in CI, a load generator and log-based report, measured results labelled by source (AWS, LocalStack, configuration, estimate), a timed demo script with a recording, resume notes ([docs/resume.md](docs/resume.md)), and one capped run on AWS that found four problems the LocalStack runs missed ([ADR 0011](docs/adr/0011-one-capped-aws-run.md))
 
 ## License
 
